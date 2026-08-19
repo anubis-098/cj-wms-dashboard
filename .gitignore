@@ -1,0 +1,51 @@
+# AI working files
+ai_log.md
+decision.md
+agent.md
+codex.txt
+
+# Dependencies
+node_modules/
+frontend/node_modules/
+
+# Build output
+dist/
+frontend/dist/
+build/
+
+# Python cache
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Local/runtime config
+.env
+.env.*
+!.env.example
+backend/.env
+backend/.env.*
+!backend/.env.example
+backend/data_sources.json
+backend/dashboard_widgets.json
+uploads/*
+!uploads/.gitkeep
+
+# Local Excel data files
+*.xlsx
+*.xls
+~$*.xlsx
+
+# Scratch/example app copies
+example/frontend/
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
