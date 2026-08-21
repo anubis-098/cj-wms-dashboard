@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import math
 import os
@@ -13,6 +14,7 @@ from threading import Lock
 from time import monotonic
 from typing import Any
 from urllib.parse import quote_plus
+from urllib.request import Request as UrlRequest, urlopen
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.encoders import jsonable_encoder
@@ -35,9 +37,28 @@ SYSTEM_ID = str(uuid.uuid4())
 workspace_event_subscribers: set[asyncio.Queue[tuple[str, str]]] = set()
 EXCEL_CACHE_TTL_SECONDS = int(os.getenv("EXCEL_CACHE_TTL_SECONDS", "600"))
 EXCEL_CACHE_MAX_SHEETS = int(os.getenv("EXCEL_CACHE_MAX_SHEETS", "12"))
+FILE_SERVER_SYNC_ENABLED = os.getenv("FILE_SERVER_SYNC_ENABLED", "false").lower() == "true"
+FILE_SERVER_PATH = os.getenv("FILE_SERVER_PATH", r"\\10.84.194.51\CJWMSDashboard")
+FILE_SERVER_SYNC_SECONDS = max(60, int(os.getenv("FILE_SERVER_SYNC_SECONDS", "1800")))
+FILE_SERVER_MAX_FILE_BYTES = int(os.getenv("FILE_SERVER_MAX_FILE_MB", "25")) * 1024 * 1024
+FILE_SERVER_MIRROR_URL = os.getenv("FILE_SERVER_MIRROR_URL", "").strip()
+FILE_SERVER_MIRROR_TOKEN = os.getenv("FILE_SERVER_MIRROR_TOKEN", "")
 excel_sheet_cache: OrderedDict[tuple[str, str], tuple[float, str, list[list[Any]], list[list[str]]]] = OrderedDict()
 excel_cache_lock = Lock()
 excel_sheet_locks: dict[tuple[str, str], Lock] = {}
+file_server_sync_lock = Lock()
+file_server_sync_task: asyncio.Task[None] | None = None
+file_server_sync_status: dict[str, Any] = {
+    "enabled": FILE_SERVER_SYNC_ENABLED,
+    "path": FILE_SERVER_PATH,
+    "interval_seconds": FILE_SERVER_SYNC_SECONDS,
+    "state": "disabled" if not FILE_SERVER_SYNC_ENABLED else "waiting",
+    "last_checked_at": None,
+    "last_synced_at": None,
+    "latest_filename": None,
+    "upload_id": None,
+    "message": "Automatic sync is disabled" if not FILE_SERVER_SYNC_ENABLED else "Waiting for first scan",
+}
 
 
 def broadcast_workspace_event(event_name: str, data: str) -> None:
@@ -327,6 +348,7 @@ DEFAULT_WORKSPACE_LAYOUT = {
 SETTING_KEY_DASHBOARD = "dashboard_settings"
 SETTING_KEY_WIDGETS = "dashboard_widgets"
 SETTING_KEY_WORKSPACE = "workspace_layout"
+SETTING_KEY_FILE_SERVER_SYNC = "file_server_excel_sync"
 
 
 def build_database_url() -> str:
@@ -356,12 +378,26 @@ def init_database() -> None:
 
 
 @app.on_event("startup")
-def startup() -> None:
+async def startup() -> None:
+    global file_server_sync_task
     try:
         init_database()
     except SQLAlchemyError:
         # Keep API bootable while MySQL is being prepared; DB-backed endpoints return 503.
         pass
+    if FILE_SERVER_SYNC_ENABLED:
+        file_server_sync_task = asyncio.create_task(file_server_sync_loop())
+
+
+@app.on_event("shutdown")
+async def shutdown() -> None:
+    global file_server_sync_task
+    if file_server_sync_task is None:
+        return
+    file_server_sync_task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await file_server_sync_task
+    file_server_sync_task = None
 
 
 def read_setting(setting_key: str) -> dict[str, Any] | None:
@@ -445,6 +481,44 @@ def save_workspace_layout(layout: WorkspaceLayout) -> dict[str, Any]:
         raise require_database_error(exc) from exc
 
 
+def select_latest_workbook_sheet(file_data: bytes) -> str:
+    workbook = load_workbook(BytesIO(file_data), read_only=True, data_only=True)
+    try:
+        dated_sheets: list[tuple[datetime, str]] = []
+        for sheet_name in workbook.sheetnames:
+            try:
+                sheet_date = datetime.strptime(" ".join(sheet_name.split()), "%d %b %Y")
+                dated_sheets.append((sheet_date, sheet_name))
+            except ValueError:
+                continue
+        if dated_sheets:
+            return max(dated_sheets, key=lambda item: item[0])[1]
+        if not workbook.sheetnames:
+            raise ValueError("The latest File Server workbook has no sheets")
+        return workbook.sheetnames[-1]
+    finally:
+        workbook.close()
+
+
+def update_workspace_widgets_sheet(upload_id: str, sheet_name: str) -> int:
+    layout = WorkspaceLayout(**load_workspace_layout())
+    updated_widget_ids: set[str] = set()
+
+    def update_boxes(boxes: list[WorkspaceBox]) -> None:
+        for box in boxes:
+            for widget in box.widgets:
+                if widget.sourceUploadId == upload_id and widget.sheetName != sheet_name:
+                    widget.sheetName = sheet_name
+                    updated_widget_ids.add(widget.id)
+
+    update_boxes(layout.boxes)
+    for page in layout.pages:
+        update_boxes(page.boxes)
+    if updated_widget_ids:
+        save_workspace_layout(layout)
+    return len(updated_widget_ids)
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     database_status = "ok"
@@ -477,7 +551,7 @@ def get_dashboard_data() -> dict[str, Any]:
     }
 
 
-def serialize_excel_upload(upload: ExcelUpload) -> dict[str, Any]:
+def serialize_excel_upload(upload: ExcelUpload, managed_upload_id: str | None = None) -> dict[str, Any]:
     return {
         "id": upload.id,
         "category": upload.category,
@@ -485,6 +559,7 @@ def serialize_excel_upload(upload: ExcelUpload) -> dict[str, Any]:
         "content_type": upload.content_type,
         "file_size": upload.file_size,
         "uploaded_at": upload.uploaded_at.isoformat() if upload.uploaded_at else None,
+        "managed": upload.id == managed_upload_id,
     }
 
 
@@ -505,12 +580,185 @@ def normalize_upload_category(category: str) -> str:
     return normalized
 
 
+def find_latest_file_server_excel() -> Path:
+    source_directory = Path(FILE_SERVER_PATH)
+    if not source_directory.is_dir():
+        raise FileNotFoundError(f"File Server path is unavailable: {FILE_SERVER_PATH}")
+    candidates = [
+        path for path in source_directory.iterdir()
+        if path.is_file() and path.suffix.lower() == ".xlsx" and not path.name.startswith("~$")
+    ]
+    if not candidates:
+        raise FileNotFoundError("No .xlsx files were found on the File Server")
+    return max(candidates, key=lambda path: (path.stat().st_mtime_ns, path.name.lower()))
+
+
+def sync_latest_file_server_excel() -> dict[str, Any]:
+    if not FILE_SERVER_SYNC_ENABLED:
+        raise RuntimeError("Automatic File Server sync is disabled")
+    if not file_server_sync_lock.acquire(blocking=False):
+        raise RuntimeError("A File Server sync is already running")
+
+    file_server_sync_status.update({"state": "checking", "last_checked_at": now_string(), "message": "Scanning File Server"})
+    try:
+        source_path = find_latest_file_server_excel()
+        source_stat = source_path.stat()
+        previous_state = read_setting(SETTING_KEY_FILE_SERVER_SYNC) or {}
+        signature = {
+            "source_path": str(source_path),
+            "source_mtime_ns": source_stat.st_mtime_ns,
+            "source_size": source_stat.st_size,
+        }
+        upload_id = previous_state.get("upload_id")
+        upload_exists = False
+        if upload_id:
+            with SessionLocal() as session:
+                upload_exists = session.get(ExcelUpload, upload_id) is not None
+        if upload_id and upload_exists and all(previous_state.get(key) == value for key, value in signature.items()):
+            file_server_sync_status.update({
+                "state": "idle",
+                "latest_filename": source_path.name,
+                "upload_id": upload_id,
+                "message": "Latest file is already synchronized",
+            })
+            return {"changed": False, "upload_id": upload_id, "filename": source_path.name}
+
+        file_data = source_path.read_bytes()
+        if not file_data:
+            raise ValueError("The latest File Server workbook is empty")
+        if len(file_data) > FILE_SERVER_MAX_FILE_BYTES:
+            raise ValueError(f"The latest File Server workbook exceeds {FILE_SERVER_MAX_FILE_BYTES // (1024 * 1024)} MB")
+
+        upload_id = upload_id or str(uuid.uuid4())
+        original_filename = source_path.name
+        stored_filename = f"{upload_id}_{original_filename}"
+        UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
+        target_path = UPLOAD_ROOT / stored_filename
+        target_path.write_bytes(file_data)
+        try:
+            dashboard_data = process_excel_file(target_path)
+        except Exception:
+            target_path.unlink(missing_ok=True)
+            raise
+        normalized_data = normalize_json_numbers(jsonable_encoder(dashboard_data))
+        latest_sheet = select_latest_workbook_sheet(file_data)
+
+        previous_stored_filename: str | None = None
+        with SessionLocal() as session:
+            upload = session.get(ExcelUpload, upload_id)
+            if upload is None:
+                upload = ExcelUpload(
+                    id=upload_id,
+                    category="inbound",
+                    original_filename=original_filename,
+                    stored_filename=stored_filename,
+                    content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    file_size=len(file_data),
+                    file_data=file_data,
+                    parsed_data=normalized_data,
+                )
+                session.add(upload)
+            else:
+                previous_stored_filename = upload.stored_filename
+                upload.original_filename = original_filename
+                upload.stored_filename = stored_filename
+                upload.content_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                upload.file_size = len(file_data)
+                upload.file_data = file_data
+                upload.parsed_data = normalized_data
+                upload.uploaded_at = datetime.now()
+            session.commit()
+
+        if previous_stored_filename and previous_stored_filename != stored_filename:
+            (UPLOAD_ROOT / previous_stored_filename).unlink(missing_ok=True)
+        sync_state = {
+            **signature,
+            "upload_id": upload_id,
+            "filename": original_filename,
+            "synced_at": now_string(),
+        }
+        write_setting(SETTING_KEY_FILE_SERVER_SYNC, sync_state)
+        invalidate_excel_cache(upload_id)
+        updated_widgets = update_workspace_widgets_sheet(upload_id, latest_sheet)
+        cached_dashboard.update({"status": "success", "data": normalized_data, "updated_at": now_string()})
+        file_server_sync_status.update({
+            "state": "idle",
+            "last_synced_at": sync_state["synced_at"],
+            "latest_filename": original_filename,
+            "upload_id": upload_id,
+            "message": "Latest workbook synchronized",
+        })
+        return {
+            "changed": True,
+            "upload_id": upload_id,
+            "filename": original_filename,
+            "sheet": latest_sheet,
+            "updated_widgets": updated_widgets,
+        }
+    except Exception as exc:
+        file_server_sync_status.update({"state": "error", "message": str(exc)})
+        raise
+    finally:
+        file_server_sync_lock.release()
+
+
+async def run_file_server_sync() -> dict[str, Any]:
+    if FILE_SERVER_MIRROR_URL:
+        def request_mirror() -> None:
+            request = UrlRequest(
+                FILE_SERVER_MIRROR_URL,
+                data=b"",
+                headers={"X-Sync-Token": FILE_SERVER_MIRROR_TOKEN},
+                method="POST",
+            )
+            with urlopen(request, timeout=300) as response:
+                if response.status >= 400:
+                    raise RuntimeError(f"File Server mirror returned HTTP {response.status}")
+
+        await asyncio.to_thread(request_mirror)
+    result = await asyncio.to_thread(sync_latest_file_server_excel)
+    if result["changed"]:
+        if result.get("updated_widgets"):
+            broadcast_workspace_event("workspace-layout-saved", datetime.now().isoformat())
+        broadcast_workspace_event("excel-upload-replaced", result["upload_id"])
+    return result
+
+
+async def file_server_sync_loop() -> None:
+    while True:
+        try:
+            await run_file_server_sync()
+            delay = FILE_SERVER_SYNC_SECONDS
+        except Exception:
+            delay = min(FILE_SERVER_SYNC_SECONDS, 60)
+        await asyncio.sleep(delay)
+
+
+@app.get("/file-server/status")
+def get_file_server_sync_status() -> dict[str, Any]:
+    return {"status": "success", "data": dict(file_server_sync_status)}
+
+
+@app.post("/file-server/sync")
+async def sync_file_server_now() -> dict[str, Any]:
+    try:
+        result = await run_file_server_sync()
+    except (FileNotFoundError, RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except SQLAlchemyError as exc:
+        raise require_database_error(exc) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"File Server sync failed: {exc}") from exc
+    return {"status": "success", "data": result}
+
+
 @app.get("/uploads/excel")
 def list_excel_uploads() -> dict[str, Any]:
     try:
+        managed_upload_id = (read_setting(SETTING_KEY_FILE_SERVER_SYNC) or {}).get("upload_id")
         with SessionLocal() as session:
             uploads = session.scalars(select(ExcelUpload).order_by(ExcelUpload.uploaded_at.desc())).all()
-            return {"status": "success", "data": [serialize_excel_upload(upload) for upload in uploads]}
+            return {"status": "success", "data": [serialize_excel_upload(upload, managed_upload_id) for upload in uploads]}
     except SQLAlchemyError as exc:
         raise require_database_error(exc) from exc
 
@@ -719,6 +967,8 @@ async def upload_excel(file: UploadFile = File(...), category: str = Form("inbou
 
 @app.put("/uploads/excel/{upload_id}")
 async def replace_excel_upload(upload_id: str, file: UploadFile = File(...)) -> dict[str, Any]:
+    if upload_id == (read_setting(SETTING_KEY_FILE_SERVER_SYNC) or {}).get("upload_id"):
+        raise HTTPException(status_code=409, detail="The managed File Server upload cannot be replaced manually")
     if not file.filename or not file.filename.lower().endswith(".xlsx"):
         raise HTTPException(status_code=400, detail="Only .xlsx files are supported")
     file_data = await file.read()
@@ -776,6 +1026,8 @@ async def replace_excel_upload(upload_id: str, file: UploadFile = File(...)) -> 
 
 @app.delete("/uploads/excel/{upload_id}")
 def delete_excel_upload(upload_id: str) -> dict[str, str]:
+    if upload_id == (read_setting(SETTING_KEY_FILE_SERVER_SYNC) or {}).get("upload_id"):
+        raise HTTPException(status_code=409, detail="The managed File Server upload cannot be deleted")
     try:
         with SessionLocal() as session:
             upload = session.get(ExcelUpload, upload_id)
@@ -873,28 +1125,14 @@ def update_workspace_excel_sheet(payload: WorkspaceExcelSheetRequest) -> dict[st
         raise HTTPException(status_code=400, detail="Sheet is required")
     get_cached_excel_sheet(payload.upload_id, sheet_name)
 
-    layout = WorkspaceLayout(**load_workspace_layout())
-    updated_widget_ids: set[str] = set()
-
-    def update_boxes(boxes: list[WorkspaceBox]) -> None:
-        for box in boxes:
-            for widget in box.widgets:
-                if widget.sourceUploadId == payload.upload_id:
-                    widget.sheetName = sheet_name
-                    updated_widget_ids.add(widget.id)
-
-    update_boxes(layout.boxes)
-    for page in layout.pages:
-        update_boxes(page.boxes)
-
-    if not updated_widget_ids:
+    updated_widgets = update_workspace_widgets_sheet(payload.upload_id, sheet_name)
+    if not updated_widgets:
         raise HTTPException(status_code=404, detail="No workspace widgets use this Excel file")
 
-    saved_layout = save_workspace_layout(layout)
     broadcast_workspace_event("workspace-layout-saved", datetime.now().isoformat())
     return {
         "status": "success",
         "sheet": sheet_name,
-        "updated_widgets": len(updated_widget_ids),
-        "data": saved_layout,
+        "updated_widgets": updated_widgets,
+        "data": load_workspace_layout(),
     }

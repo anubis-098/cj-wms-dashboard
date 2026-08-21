@@ -178,6 +178,22 @@ select {
   background-color: #ffffff !important;
 }
 
+/* Custom widget colors must win over theme utility colors in both themes. */
+.theme-light [data-widget-custom-background="true"][data-widget-custom-background],
+.theme-dark [data-widget-custom-background="true"][data-widget-custom-background] {
+  background-color: var(--widget-background-color, #ffffff) !important;
+}
+
+.theme-light [data-widget-custom-text-color="true"][data-widget-custom-text-color],
+.theme-dark [data-widget-custom-text-color="true"][data-widget-custom-text-color] {
+  color: var(--widget-text-color) !important;
+}
+
+.theme-light [data-excel-custom-text-color="true"][data-excel-custom-text-color],
+.theme-dark [data-excel-custom-text-color="true"][data-excel-custom-text-color] {
+  color: var(--excel-cell-text-color) !important;
+}
+
 .theme-dark {
   --chart-surface: #14222e;
   --column-label-border: #ffffff;

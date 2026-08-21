@@ -1148,6 +1148,7 @@ function WidgetSlot({
   const [updateNoticeKey, setUpdateNoticeKey] = useState(0);
   const [showUpdateNotice, setShowUpdateNotice] = useState(false);
   const [selectedGradientStopId, setSelectedGradientStopId] = useState<string | null>(null);
+  const seriesSortSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
   const mountedDuringEditRef = useRef(editable);
   const updateSignatureRef = useRef<string | null>(null);
   const { setNodeRef } = useDroppable({
@@ -1480,7 +1481,7 @@ function WidgetSlot({
     dataLabels: { enabled: false },
     grid: { borderColor: "#e2e8f0", padding: { left: 4, right: 10, top: -4, bottom: 0 } },
     legend: { fontSize: `${chartFontSize}px`, fontWeight: 700, position: chartLegendPosition, show: chartShowLegend },
-    markers: { size: widget?.lineShowMarkers ?? true ? 4 : 0, strokeColors: "#ffffff", strokeWidth: 2, hover: { sizeOffset: 2 } },
+    markers: { size: widget?.lineShowMarkers ?? true ? 4 : 0, strokeColors: "var(--chart-surface)", strokeWidth: 2, hover: { sizeOffset: 2 } },
     stroke: { curve: widget?.lineCurve ?? "smooth", lineCap: "round", width: widget?.lineStrokeWidth ?? 3 },
     tooltip: { shared: true, intersect: false, y: { formatter: formatChartTooltipValue } },
     xaxis: { categories: currentStackCategories.map((category) => category.label), labels: { style: { fontSize: `${chartFontSize}px` } } },
@@ -3457,7 +3458,7 @@ function WidgetSlot({
                     <div><h3 className="text-xs font-black text-cj-navy">Series data</h3><p className="text-[10px] font-bold text-slate-400">Use a Cell, formula, or raw number.</p></div>
                     <button className="grid h-8 w-8 place-items-center rounded-md bg-cj-navy text-white hover:bg-cj-blue" title="Add series" type="button" onClick={addStackSeries}><Plus className="h-4 w-4" /></button>
                   </div>
-                  <DndContext collisionDetection={closestCenter} onDragEnd={reorderStackSeries}>
+                  <DndContext sensors={seriesSortSensors} collisionDetection={closestCenter} onDragEnd={reorderStackSeries}>
                     <SortableContext items={currentStackSeries.map((series) => series.id)} strategy={verticalListSortingStrategy}>
                   <div className="mt-2 space-y-2">
                     {currentStackSeries.map((series, seriesIndex) => (
@@ -5210,8 +5211,8 @@ export function BoxWorkspaceEditor({
         </PageCopyPanel>
       ) : null}
 
-      <footer className="-mt-3 px-4 pb-2 text-center text-[10px] font-medium text-slate-400">
-        © 2026 copyright reserved , CJ Logistics , IT HDC.
+      <footer className="pointer-events-none relative z-10 -mt-16 px-4 pb-4 text-center text-[10px] font-medium text-slate-400">
+        © 2026 copyright reserved , CJ Logistics , IT Auttha.
       </footer>
 
       <DragOverlay>

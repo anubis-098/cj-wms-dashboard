@@ -14,6 +14,19 @@ export type ExcelUploadRecord = {
   content_type: string;
   file_size: number;
   uploaded_at: string | null;
+  managed?: boolean;
+};
+
+export type FileServerSyncStatus = {
+  enabled: boolean;
+  path: string;
+  interval_seconds: number;
+  state: "disabled" | "waiting" | "checking" | "idle" | "error";
+  last_checked_at: string | null;
+  last_synced_at: string | null;
+  latest_filename: string | null;
+  upload_id: string | null;
+  message: string;
 };
 
 export async function fetchDashboard() {
@@ -48,6 +61,16 @@ export async function replaceExcelUpload(uploadId: string, file: File) {
 
 export async function fetchExcelUploads() {
   const response = await api.get<{ status: string; data: ExcelUploadRecord[] }>("/uploads/excel");
+  return response.data.data;
+}
+
+export async function fetchFileServerSyncStatus() {
+  const response = await api.get<{ status: string; data: FileServerSyncStatus }>("/file-server/status");
+  return response.data.data;
+}
+
+export async function syncFileServerNow() {
+  const response = await api.post<{ status: string; data: { changed: boolean; upload_id: string; filename: string } }>("/file-server/sync");
   return response.data.data;
 }
 

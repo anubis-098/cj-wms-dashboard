@@ -30,10 +30,17 @@ services:
       MYSQL_USER: cj_wms_user
       MYSQL_PASSWORD: change_me
       UPLOAD_ROOT: /uploads
+      FILE_SERVER_SYNC_ENABLED: ${FILE_SERVER_SYNC_ENABLED:-false}
+      FILE_SERVER_PATH: ${FILE_SERVER_PATH:-/smd}
+      FILE_SERVER_SYNC_SECONDS: ${FILE_SERVER_SYNC_SECONDS:-1800}
+      FILE_SERVER_MAX_FILE_MB: ${FILE_SERVER_MAX_FILE_MB:-25}
+      FILE_SERVER_MIRROR_URL: ${FILE_SERVER_MIRROR_URL:-}
+      FILE_SERVER_MIRROR_TOKEN: ${FILE_SERVER_MIRROR_TOKEN:-}
     ports:
       - "8000:8000"
     volumes:
       - ./uploads:/uploads
+      - ./smd-cache:/smd:ro
     depends_on:
       mysql:
         condition: service_healthy

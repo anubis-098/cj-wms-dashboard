@@ -35,6 +35,9 @@ backend/data_sources.json
 backend/dashboard_widgets.json
 uploads/*
 !uploads/.gitkeep
+smd-cache/*
+!smd-cache/.gitkeep
+*_backup.sql
 
 # Local Excel data files
 *.xlsx

@@ -2,8 +2,8 @@ import { FileSpreadsheet, LoaderCircle, Moon, Pencil, Plus, RefreshCw, Save, Set
 import { ChangeEvent, useEffect, useRef, useState } from "react";
 
 import { BoxWorkspaceEditor } from "../components/workspace/BoxWorkspaceEditor";
-import { deleteExcelUpload, fetchExcelSheets, fetchExcelUploads, fetchWorkspaceLayout, replaceExcelUpload, switchWorkspaceUploadSheet, uploadExcel } from "../services/api";
-import type { ExcelUploadRecord } from "../services/api";
+import { deleteExcelUpload, fetchExcelSheets, fetchExcelUploads, fetchFileServerSyncStatus, fetchWorkspaceLayout, replaceExcelUpload, switchWorkspaceUploadSheet, syncFileServerNow, uploadExcel } from "../services/api";
+import type { ExcelUploadRecord, FileServerSyncStatus } from "../services/api";
 
 function formatDateTime(date: Date) {
   const hours = date.getHours().toString().padStart(2, "0");
@@ -33,6 +33,8 @@ export function TvDashboardPage() {
   const [isUploading, setIsUploading] = useState(false);
   const [deletingUploadId, setDeletingUploadId] = useState<string | null>(null);
   const [switchingSheetUploadId, setSwitchingSheetUploadId] = useState<string | null>(null);
+  const [fileServerStatus, setFileServerStatus] = useState<FileServerSyncStatus | null>(null);
+  const [isSyncingFileServer, setIsSyncingFileServer] = useState(false);
   const [uploadSheets, setUploadSheets] = useState<Record<string, string[]>>({});
   const [activeUploadSheets, setActiveUploadSheets] = useState<Record<string, string>>({});
   const [uploadTarget, setUploadTarget] = useState<{ category: ExcelUploadRecord["category"]; replaceId?: string } | null>(null);
@@ -70,10 +72,11 @@ export function TvDashboardPage() {
   useEffect(() => {
     if (!isSettingsOpen) return;
     let active = true;
-    Promise.all([fetchExcelUploads(), fetchWorkspaceLayout()])
-      .then(async ([uploads, layout]) => {
+    Promise.all([fetchExcelUploads(), fetchWorkspaceLayout(), fetchFileServerSyncStatus().catch(() => null)])
+      .then(async ([uploads, layout, serverStatus]) => {
         if (!active) return;
         setExcelUploads(uploads);
+        setFileServerStatus(serverStatus);
         const sheetEntries = await Promise.all(uploads.map(async (upload) => {
           try {
             return [upload.id, (await fetchExcelSheets(upload.id)).data] as const;
@@ -181,12 +184,38 @@ export function TvDashboardPage() {
     }
   }
 
+  async function handleFileServerSync() {
+    setIsSyncingFileServer(true);
+    setUploadStatus("Checking SMD File Server...");
+    try {
+      const result = await syncFileServerNow();
+      const uploads = await fetchExcelUploads();
+      const sheetEntries = await Promise.all(uploads.map(async (upload) => {
+        try {
+          return [upload.id, (await fetchExcelSheets(upload.id)).data] as const;
+        } catch {
+          return [upload.id, []] as const;
+        }
+      }));
+      setExcelUploads(uploads);
+      setUploadSheets(Object.fromEntries(sheetEntries));
+      setFileServerStatus(await fetchFileServerSyncStatus());
+      setUploadStatus(result.changed ? `Synchronized ${result.filename}` : `${result.filename} is already up to date`);
+    } catch (error) {
+      const detail = (error as { response?: { data?: { detail?: string } } }).response?.data?.detail;
+      setUploadStatus(detail ?? "File Server sync failed");
+      setFileServerStatus(await fetchFileServerSyncStatus().catch(() => fileServerStatus));
+    } finally {
+      setIsSyncingFileServer(false);
+    }
+  }
+
   function formatFileSize(bytes: number) {
     return bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   }
 
   return (
-    <main className={`tv-dashboard h-screen overflow-y-auto bg-screen-bg ${theme === "dark" ? "theme-dark" : "theme-light"}`} aria-label="Workspace">
+    <main className={`tv-dashboard h-screen bg-screen-bg ${isEditMode ? "overflow-y-auto" : "overflow-hidden"} ${theme === "dark" ? "theme-dark" : "theme-light"}`} aria-label="Workspace">
       <header className="cj-brand-header sticky top-0 z-50 flex h-20 shrink-0 items-center border-b border-slate-200 bg-white px-8 shadow-sm">
         <div className="text-sm font-black tracking-wide text-cj-navy">CJ WMS</div>
         <div className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center gap-4">
@@ -251,7 +280,10 @@ export function TvDashboardPage() {
                                 <FileSpreadsheet className="h-4 w-4" />
                               </span>
                               <div className="min-w-0 flex-1">
-                                <p className="truncate text-sm font-black text-cj-navy" title={upload.filename}>{upload.filename}</p>
+                                <div className="flex min-w-0 items-center gap-1.5">
+                                  <p className="truncate text-sm font-black text-cj-navy" title={upload.filename}>{upload.filename}</p>
+                                  {upload.managed ? <span className="shrink-0 rounded bg-blue-50 px-1.5 py-0.5 text-[8px] font-black uppercase text-cj-blue">Auto Sync</span> : null}
+                                </div>
                                 <p className="text-[10px] font-bold text-slate-400">
                                   {formatFileSize(upload.file_size)}{upload.uploaded_at ? ` | ${new Date(upload.uploaded_at).toLocaleString("en-GB")}` : ""}
                                 </p>
@@ -268,7 +300,7 @@ export function TvDashboardPage() {
                                 </select>
                               </div>
                               {switchingSheetUploadId === upload.id ? <LoaderCircle className="h-4 w-4 shrink-0 animate-spin text-cj-blue" /> : null}
-                              <button
+                              {!upload.managed ? <button
                                 aria-label={`Replace ${upload.filename}`}
                                 className="grid h-8 w-8 shrink-0 place-items-center rounded-md text-cj-blue transition hover:bg-blue-50 disabled:opacity-40"
                                 disabled={isUploading}
@@ -277,8 +309,8 @@ export function TvDashboardPage() {
                                 onClick={() => openExcelPicker(upload.category, upload.id)}
                               >
                                 {isUploading && uploadTarget?.replaceId === upload.id ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                              </button>
-                              <button
+                              </button> : null}
+                              {!upload.managed ? <button
                                 aria-label={`Delete ${upload.filename}`}
                                 className="grid h-8 w-8 shrink-0 place-items-center rounded-md text-red-500 transition hover:bg-red-50 hover:text-red-700 disabled:opacity-40"
                                 disabled={deletingUploadId === upload.id || isUploading}
@@ -287,12 +319,42 @@ export function TvDashboardPage() {
                                 onClick={() => handleDeleteUpload(upload.id)}
                               >
                                 {deletingUploadId === upload.id ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-                              </button>
+                              </button> : null}
                             </div>
                           )) : <div className="px-3 py-4 text-center text-[10px] font-bold text-slate-400">No files</div>}
                     </div>
                   </section>
                 </div>
+
+                <section className="border-t border-slate-100 px-4 py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <h2 className="text-sm font-black text-cj-navy">SMD File Server</h2>
+                      <p className="mt-0.5 truncate text-[10px] font-bold text-slate-400" title={fileServerStatus?.path}>{fileServerStatus?.path ?? "Status unavailable"}</p>
+                    </div>
+                    <button
+                      aria-label="Sync latest Excel from SMD File Server"
+                      className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-cj-blue px-2 text-[10px] font-black text-cj-blue transition hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-40"
+                      disabled={!fileServerStatus?.enabled || isSyncingFileServer}
+                      title="Sync latest Excel now"
+                      type="button"
+                      onClick={handleFileServerSync}
+                    >
+                      <RefreshCw className={`h-4 w-4 ${isSyncingFileServer ? "animate-spin" : ""}`} />
+                      Sync latest Excel now
+                    </button>
+                  </div>
+                  <div className="mt-2 grid grid-cols-[72px_minmax(0,1fr)] gap-x-2 gap-y-1 rounded border border-slate-200 bg-slate-50 p-2 text-[10px] font-bold">
+                    <span className="text-slate-400">Status</span>
+                    <span className={fileServerStatus?.state === "error" ? "text-red-600" : fileServerStatus?.enabled ? "text-emerald-600" : "text-slate-500"}>{fileServerStatus?.message ?? "Unavailable"}</span>
+                    <span className="text-slate-400">Latest file</span>
+                    <span className="truncate text-cj-navy" title={fileServerStatus?.latest_filename ?? undefined}>{fileServerStatus?.latest_filename ?? "-"}</span>
+                    <span className="text-slate-400">Last sync</span>
+                    <span className="text-cj-navy">{fileServerStatus?.last_synced_at ?? "-"}</span>
+                    <span className="text-slate-400">Interval</span>
+                    <span className="text-cj-navy">{Math.round((fileServerStatus?.interval_seconds ?? 1800) / 60)} minutes</span>
+                  </div>
+                </section>
 
                 <section className="border-t border-slate-100 px-4 py-3">
                   <div className="mb-2">
