@@ -500,14 +500,27 @@ def select_latest_workbook_sheet(file_data: bytes) -> str:
         workbook.close()
 
 
-def update_workspace_widgets_sheet(upload_id: str, sheet_name: str) -> int:
+def update_workspace_widgets_sheet(upload_id: str, sheet_name: str, rebind_orphaned: bool = False) -> int:
     layout = WorkspaceLayout(**load_workspace_layout())
     updated_widget_ids: set[str] = set()
+    existing_upload_ids: set[str] = set()
+    if rebind_orphaned:
+        with SessionLocal() as session:
+            existing_upload_ids = set(session.scalars(select(ExcelUpload.id)).all())
 
     def update_boxes(boxes: list[WorkspaceBox]) -> None:
         for box in boxes:
             for widget in box.widgets:
-                if widget.sourceUploadId == upload_id and widget.sheetName != sheet_name:
+                uses_target = widget.sourceUploadId == upload_id
+                uses_missing_upload = bool(
+                    rebind_orphaned
+                    and widget.sourceUploadId
+                    and widget.sourceUploadId not in existing_upload_ids
+                )
+                if (uses_target or uses_missing_upload) and (
+                    widget.sourceUploadId != upload_id or widget.sheetName != sheet_name
+                ):
+                    widget.sourceUploadId = upload_id
                     widget.sheetName = sheet_name
                     updated_widget_ids.add(widget.id)
 
@@ -679,7 +692,7 @@ def sync_latest_file_server_excel() -> dict[str, Any]:
         }
         write_setting(SETTING_KEY_FILE_SERVER_SYNC, sync_state)
         invalidate_excel_cache(upload_id)
-        updated_widgets = update_workspace_widgets_sheet(upload_id, latest_sheet)
+        updated_widgets = update_workspace_widgets_sheet(upload_id, latest_sheet, rebind_orphaned=True)
         cached_dashboard.update({"status": "success", "data": normalized_data, "updated_at": now_string()})
         file_server_sync_status.update({
             "state": "idle",
@@ -1125,7 +1138,13 @@ def update_workspace_excel_sheet(payload: WorkspaceExcelSheetRequest) -> dict[st
         raise HTTPException(status_code=400, detail="Sheet is required")
     get_cached_excel_sheet(payload.upload_id, sheet_name)
 
-    updated_widgets = update_workspace_widgets_sheet(payload.upload_id, sheet_name)
+    sync_state = read_setting(SETTING_KEY_FILE_SERVER_SYNC) or {}
+    is_managed_upload = sync_state.get("upload_id") == payload.upload_id
+    updated_widgets = update_workspace_widgets_sheet(
+        payload.upload_id,
+        sheet_name,
+        rebind_orphaned=is_managed_upload,
+    )
     if not updated_widgets:
         raise HTTPException(status_code=404, detail="No workspace widgets use this Excel file")
 
