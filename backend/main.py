@@ -201,6 +201,18 @@ class WorkspaceWidget(BaseModel):
     barMarkerWidth: int = 3
     barMarkerShowValue: bool = True
     barMarkerFontSize: int = 10
+    barMarkerShowLabel: bool = True
+    barMarkerLabelText: str = "Target"
+    barMarkerLabelFontSize: int = 9
+    barMarkerLabelTextColor: str = "#ffffff"
+    barMarkerLabelOffsetY: int = 4
+    barMarkerDisplayPercentage: bool = False
+    barMarkerZoneEnabled: bool = False
+    barMarkerZoneLowEnd: int = 50
+    barMarkerZoneMidEnd: int = 80
+    barMarkerZoneLowColor: str = "#fee2e2"
+    barMarkerZoneMidColor: str = "#fef3c7"
+    barMarkerZoneHighColor: str = "#dcfce7"
     barBorderRadius: int = 6
     stackCategories: list[StackBarCategory] = Field(default_factory=list)
     stackSeries: list[StackBarSeries] = Field(default_factory=list)
@@ -225,6 +237,12 @@ class WorkspaceWidget(BaseModel):
     lineShowMarkers: bool = True
     lineNullMissing: bool = False
     lineAnnotations: list[LineAnnotation] = Field(default_factory=list)
+    radarStrokeWidth: int = 2
+    radarFillOpacity: float = 0.2
+    radarMarkerSize: int = 4
+    radarPolygonColor1: str = "#f8fafc"
+    radarPolygonColor2: str = "#eef2f6"
+    radarPolygonStrokeColor: str = "#cbd5e1"
     columnLabelRotation: int = -45
     columnWidth: int = 55
     columnBorderRadius: int = 6

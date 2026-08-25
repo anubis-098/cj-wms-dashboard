@@ -101,6 +101,18 @@ export type WorkspaceWidget = {
   barMarkerWidth?: number;
   barMarkerShowValue?: boolean;
   barMarkerFontSize?: number;
+  barMarkerShowLabel?: boolean;
+  barMarkerLabelText?: string;
+  barMarkerLabelFontSize?: number;
+  barMarkerLabelTextColor?: string;
+  barMarkerLabelOffsetY?: number;
+  barMarkerDisplayPercentage?: boolean;
+  barMarkerZoneEnabled?: boolean;
+  barMarkerZoneLowEnd?: number;
+  barMarkerZoneMidEnd?: number;
+  barMarkerZoneLowColor?: string;
+  barMarkerZoneMidColor?: string;
+  barMarkerZoneHighColor?: string;
   barBorderRadius?: number;
   stackCategories?: Array<{
     id: string;
@@ -142,6 +154,12 @@ export type WorkspaceWidget = {
     value: string;
     color: string;
   }>;
+  radarStrokeWidth?: number;
+  radarFillOpacity?: number;
+  radarMarkerSize?: number;
+  radarPolygonColor1?: string;
+  radarPolygonColor2?: string;
+  radarPolygonStrokeColor?: string;
   columnLabelRotation?: number;
   columnWidth?: number;
   columnBorderRadius?: number;
