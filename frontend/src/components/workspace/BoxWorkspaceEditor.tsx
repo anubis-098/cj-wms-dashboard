@@ -469,7 +469,19 @@ async function fetchNumericInputLookup(uploadId: string | undefined, sheetName: 
   const references = [...new Set(inputs.flatMap((input) => input?.match(/\$?[A-Z]+\$?\d+/gi) ?? []).map((cell) => cell.replace(/\$/g, "").toUpperCase()))];
   if (references.length === 0) return {} as ExcelCellLookup;
   if (!uploadId || !sheetName) throw new Error("Excel source required");
-  return (await fetchExcelCells(uploadId, sheetName, references)).data;
+  try {
+    return (await fetchExcelCells(uploadId, sheetName, references)).data;
+  } catch (batchError) {
+    console.warn("Excel batch Cell lookup failed; falling back to Range requests", batchError);
+    const entries = await Promise.all(references.map(async (reference) => {
+      const response = await fetchExcelRange(uploadId, sheetName, reference);
+      return [reference, {
+        value: response.data[0]?.[0],
+        number_format: response.number_formats?.[0]?.[0] ?? "General",
+      }] as const;
+    }));
+    return Object.fromEntries(entries) as ExcelCellLookup;
+  }
 }
 
 function tokenizeNumericExpression(input: string) {
