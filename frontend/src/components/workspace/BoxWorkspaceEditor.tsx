@@ -1706,6 +1706,51 @@ function WidgetSlot({
     );
   }
 
+  function renderBasicBarChart() {
+    const axisSteps = [0, 25, 50, 75, 100];
+    return (
+      <div className="flex h-full min-h-0 flex-col pb-4 pt-1">
+        <div className="flex min-h-0 flex-1 flex-col justify-evenly gap-1">
+          {currentBarItems.map((item, index) => {
+            const value = Math.max(0, Number(barValues[index] ?? 0));
+            const widthPercent = Math.max(0, Math.min(100, (value / effectiveBarMax) * 100));
+            const displayValue = barPercentageMode ? `${value.toFixed(1)}%` : value.toLocaleString(undefined, { maximumFractionDigits: 2 });
+            return (
+              <div key={item.id} className="grid min-h-0 flex-1 grid-cols-[clamp(52px,22%,96px)_minmax(0,1fr)] items-center gap-1.5 px-2">
+                <div className="truncate text-right font-bold text-slate-600" style={{ fontSize: `${chartFontSize}px` }} title={item.label || item.cell}>
+                  {item.label || item.cell}
+                </div>
+                <div
+                  className="relative h-[62%] min-h-3 overflow-visible rounded-sm"
+                  style={{ backgroundImage: "linear-gradient(to right, transparent calc(25% - 1px), #e2e8f0 25%, transparent calc(25% + 1px), transparent calc(50% - 1px), #e2e8f0 50%, transparent calc(50% + 1px), transparent calc(75% - 1px), #e2e8f0 75%, transparent calc(75% + 1px))" }}
+                  title={`${item.label || item.cell}: ${displayValue}`}
+                >
+                  <div
+                    className="relative flex h-full min-w-[2px] items-center justify-end rounded-[inherit] px-1.5 text-right font-extrabold text-white transition-[width] duration-700 ease-out"
+                    style={{ backgroundColor: chartColors[index % chartColors.length], borderRadius: `${chartBarBorderRadius}px`, fontSize: `${chartFontSize}px`, width: `${widthPercent}%` }}
+                  >
+                    {widthPercent >= 18 ? displayValue : null}
+                  </div>
+                  {widthPercent < 18 ? (
+                    <span className="absolute top-1/2 -translate-y-1/2 whitespace-nowrap font-extrabold text-slate-700" style={{ fontSize: `${chartFontSize}px`, left: `calc(${widthPercent}% + 4px)` }}>
+                      {displayValue}
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <div className="grid grid-cols-[clamp(52px,22%,96px)_minmax(0,1fr)] gap-1.5 px-2 text-[8px] font-bold text-slate-400">
+          <span />
+          <div className="flex justify-between border-t border-slate-300 pt-0.5">
+            {axisSteps.map((step) => <span key={step}>{barPercentageMode ? `${step}%` : Math.round((effectiveBarMax * step) / 100).toLocaleString()}</span>)}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   useEffect(() => {
     if (!editable) {
       setIsSelected(false);
@@ -2868,9 +2913,7 @@ function WidgetSlot({
               {renderBarLegend()}
               <div className="workspace-chart absolute inset-x-0 min-h-0 overflow-visible" style={barChartViewportStyle}>
               {barValues.length > 0 ? (
-                <Suspense fallback={<div className="grid h-full place-items-center text-[10px] font-bold text-slate-400">Loading chart...</div>}>
-                  <ApexBarChart options={barChartOptions} data={barValues} />
-                </Suspense>
+                renderBasicBarChart()
               ) : (
                 <div className="grid h-full place-items-center px-2 text-center text-[10px] font-bold text-slate-400">{barStatus}</div>
               )}
