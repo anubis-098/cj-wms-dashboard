@@ -1288,10 +1288,10 @@ function WidgetSlot({
   const barPercentageMode = (widget?.type === "bar" && (widget.barDisplayPercentage ?? false))
     || (isBarMarkers && (widget?.barMarkerDisplayPercentage ?? false));
   const effectiveBarMax = barPercentageMode ? 100 : Math.max(1, resolvedBarMax || widget?.barMax || 100);
-  const markerZoneMaximum = Math.max(1, resolvedBarMax || widget?.barMax || 100);
   const markerZoneLowEnd = Math.max(0, Math.min(100, widget?.barMarkerZoneLowEnd ?? 50));
   const markerZoneMidEnd = Math.max(markerZoneLowEnd, Math.min(100, widget?.barMarkerZoneMidEnd ?? 80));
-  const markerZoneScale = barPercentageMode ? 1 : markerZoneMaximum / 100;
+  const markerZoneOpacity = Math.max(0, Math.min(100, widget?.barMarkerZoneOpacity ?? 32));
+  const markerZoneBackground = `linear-gradient(to right, ${widget?.barMarkerZoneLowColor ?? "#fee2e2"} 0%, ${widget?.barMarkerZoneLowColor ?? "#fee2e2"} ${markerZoneLowEnd}%, ${widget?.barMarkerZoneMidColor ?? "#fef3c7"} ${markerZoneLowEnd}%, ${widget?.barMarkerZoneMidColor ?? "#fef3c7"} ${markerZoneMidEnd}%, ${widget?.barMarkerZoneHighColor ?? "#dcfce7"} ${markerZoneMidEnd}%, ${widget?.barMarkerZoneHighColor ?? "#dcfce7"} 100%)`;
   const currentLineAnnotations = widget?.lineAnnotations ?? [];
   const SelectedIcon = iconOptions.find((option) => option.name === widget?.iconName)?.icon ?? Package;
   const renderBarTargetLabels = (chart: ApexCharts) => drawBarTargetLabels(chart, {
@@ -1327,31 +1327,11 @@ function WidgetSlot({
     },
     grid: { borderColor: "#e2e8f0", padding: { left: 4, right: 8, top: -8, bottom: -8 } },
     legend: {
-      customLegendItems: isBarMarkers
-        ? [...currentBarItems.map((item) => item.label || item.cell), widget?.barMarkerLabelText || "Target"]
-        : currentBarItems.map((item) => item.label || item.cell),
-      fontSize: `${chartFontSize}px`,
-      fontWeight: 700,
-      markers: {
-        fillColors: [
-          ...currentBarItems.map((_, index) => chartColors[index % chartColors.length]),
-          ...(isBarMarkers ? [widget?.barMarkerColor ?? "#e42f44"] : []),
-        ],
-      },
-      position: chartLegendPosition,
-      show: chartShowLegend,
-      showForSingleSeries: true,
+      show: false,
     },
     plotOptions: { bar: { borderRadius: chartBarBorderRadius, borderRadiusApplication: "around", distributed: true, horizontal: true } },
     states: { active: { filter: { type: "none" } }, hover: { filter: { type: "none" } } },
     tooltip: { enabled: true, y: { formatter: (value) => barPercentageMode ? `${Number(value).toFixed(2)}%` : formatChartTooltipValue(value) } },
-    annotations: isBarMarkers && (widget?.barMarkerZoneEnabled ?? false) ? {
-      xaxis: [
-        { x: 0, x2: markerZoneLowEnd * markerZoneScale, borderColor: "transparent", fillColor: widget?.barMarkerZoneLowColor ?? "#fee2e2", opacity: 0.5 },
-        { x: markerZoneLowEnd * markerZoneScale, x2: markerZoneMidEnd * markerZoneScale, borderColor: "transparent", fillColor: widget?.barMarkerZoneMidColor ?? "#fef3c7", opacity: 0.5 },
-        { x: markerZoneMidEnd * markerZoneScale, x2: 100 * markerZoneScale, borderColor: "transparent", fillColor: widget?.barMarkerZoneHighColor ?? "#dcfce7", opacity: 0.5 },
-      ],
-    } : undefined,
     xaxis: {
       categories: currentBarItems.map((item) => item.label || item.cell),
       max: effectiveBarMax,
@@ -1651,10 +1631,11 @@ function WidgetSlot({
     },
   };
   const radarChartOptions: ApexOptions = {
-    chart: { animations: chartAnimations, background: "transparent", parentHeightOffset: 0, toolbar: { show: false } },
+    chart: { animations: chartAnimations, background: "transparent", fontFamily: "Arial, sans-serif", offsetY: 2, parentHeightOffset: 0, toolbar: { show: false } },
     colors: chartColors,
     dataLabels: { enabled: false },
     fill: { opacity: widget?.radarFillOpacity ?? 0.2 },
+    grid: { padding: { bottom: -14, left: -12, right: -12, top: -14 } },
     legend: { fontSize: `${chartFontSize}px`, fontWeight: 700, position: chartLegendPosition, show: chartShowLegend },
     markers: {
       size: widget?.radarMarkerSize ?? 4,
@@ -1674,7 +1655,7 @@ function WidgetSlot({
     tooltip: { intersect: false, shared: false, y: { formatter: formatChartTooltipValue } },
     xaxis: {
       categories: currentStackCategories.map((category) => category.label),
-      labels: { style: { fontSize: `${chartFontSize}px`, fontWeight: 700 } },
+      labels: { style: { fontFamily: "Arial, sans-serif", fontSize: `${chartFontSize}px`, fontWeight: 800 } },
     },
     yaxis: { max: effectiveBarMax, min: 0, show: false, tickAmount: 5 },
   };
@@ -1687,6 +1668,26 @@ function WidgetSlot({
     }),
   }));
   const canRenderRadar = radarCategoryCount >= 3 && radarSeries.length > 0 && stackValues.length > 0;
+
+  function renderBarLegend() {
+    if (!chartShowLegend) return null;
+    return (
+      <div className={`absolute inset-x-2 z-20 flex min-h-5 flex-wrap items-center justify-center gap-x-3 gap-y-0.5 overflow-hidden text-[9px] font-bold text-slate-600 ${chartLegendPosition === "top" ? "top-0" : "bottom-0"}`}>
+        {currentBarItems.map((item, index) => (
+          <span key={item.id} className="inline-flex min-w-0 items-center gap-1">
+            <i className="h-2 w-2 shrink-0 rounded-sm" style={{ backgroundColor: chartColors[index % chartColors.length] }} />
+            <span className="max-w-24 truncate">{item.label || item.cell}</span>
+          </span>
+        ))}
+        {isBarMarkers ? (
+          <span className="inline-flex items-center gap-1">
+            <i className="h-0 w-3 shrink-0 border-t-2" style={{ borderColor: widget?.barMarkerColor ?? "#e42f44" }} />
+            <span>{widget?.barMarkerLabelText || "Target"}</span>
+          </span>
+        ) : null}
+      </div>
+    );
+  }
 
   useEffect(() => {
     if (!editable) {
@@ -2539,7 +2540,16 @@ function WidgetSlot({
               <div className={`mt-2 space-y-2 ${widget.barMarkerZoneEnabled ?? false ? "" : "pointer-events-none opacity-45"}`}>
                 <div className="grid grid-cols-2 gap-2">
                   <label className="text-[8px] font-black uppercase text-slate-500">
-                    Low ends at {markerZoneLowEnd}%
+                    Low ends (%)
+                    <input
+                      className="mt-1 h-8 w-full rounded border border-slate-200 px-2 text-xs font-bold text-cj-navy outline-none focus:border-cj-blue"
+                      type="number"
+                      min={0}
+                      max={markerZoneMidEnd}
+                      step={1}
+                      value={markerZoneLowEnd}
+                      onChange={(event) => onUpdateWidget(boxId, widget.id, { barMarkerZoneLowEnd: Math.max(0, Math.min(markerZoneMidEnd, Number(event.target.value))) })}
+                    />
                     <input
                       className="mt-1 w-full accent-cj-blue"
                       type="range"
@@ -2550,7 +2560,16 @@ function WidgetSlot({
                     />
                   </label>
                   <label className="text-[8px] font-black uppercase text-slate-500">
-                    Mid ends at {markerZoneMidEnd}%
+                    Mid ends (%)
+                    <input
+                      className="mt-1 h-8 w-full rounded border border-slate-200 px-2 text-xs font-bold text-cj-navy outline-none focus:border-cj-blue"
+                      type="number"
+                      min={markerZoneLowEnd}
+                      max={100}
+                      step={1}
+                      value={markerZoneMidEnd}
+                      onChange={(event) => onUpdateWidget(boxId, widget.id, { barMarkerZoneMidEnd: Math.max(markerZoneLowEnd, Math.min(100, Number(event.target.value))) })}
+                    />
                     <input
                       className="mt-1 w-full accent-cj-blue"
                       type="range"
@@ -2579,6 +2598,18 @@ function WidgetSlot({
                     </label>
                   ))}
                 </div>
+                <label className="block text-[8px] font-black uppercase text-slate-500">
+                  Zone opacity {markerZoneOpacity}%
+                  <input
+                    className="mt-1 w-full accent-cj-blue"
+                    type="range"
+                    min={5}
+                    max={80}
+                    step={1}
+                    value={markerZoneOpacity}
+                    onChange={(event) => onUpdateWidget(boxId, widget.id, { barMarkerZoneOpacity: Number(event.target.value) })}
+                  />
+                </label>
               </div>
             </div>
           </div>
@@ -2816,7 +2847,9 @@ function WidgetSlot({
               )}
             </div>
           ) : widget.type === "bar" ? (
-            <div className="workspace-chart absolute inset-1 overflow-visible rounded bg-white">
+            <div className="absolute inset-1 overflow-visible rounded bg-white">
+              {renderBarLegend()}
+              <div className={`workspace-chart absolute inset-x-0 overflow-visible ${chartShowLegend && chartLegendPosition === "top" ? "bottom-0 top-5" : chartShowLegend ? "bottom-5 top-0" : "inset-y-0"}`}>
               {barValues.length > 0 ? (
                 <Suspense fallback={<div className="grid h-full place-items-center text-[10px] font-bold text-slate-400">Loading chart...</div>}>
                   <ApexBarChart options={barChartOptions} data={barValues} />
@@ -2824,9 +2857,19 @@ function WidgetSlot({
               ) : (
                 <div className="grid h-full place-items-center px-2 text-center text-[10px] font-bold text-slate-400">{barStatus}</div>
               )}
+              </div>
             </div>
           ) : isBarMarkers ? (
-            <div className="workspace-chart absolute inset-1 overflow-visible rounded bg-white">
+            <div className="absolute inset-1 overflow-visible rounded bg-white">
+              {renderBarLegend()}
+              <div className={`absolute inset-x-0 overflow-hidden ${chartShowLegend && chartLegendPosition === "top" ? "bottom-0 top-5" : chartShowLegend ? "bottom-5 top-0" : "inset-y-0"}`}>
+                {widget.barMarkerZoneEnabled ?? false ? (
+                  <div
+                    className="pointer-events-none absolute bottom-7 right-2 top-2 z-0 rounded-sm"
+                    style={{ background: markerZoneBackground, left: "clamp(52px, 22%, 96px)", opacity: markerZoneOpacity / 100 }}
+                  />
+                ) : null}
+                <div className="workspace-chart absolute inset-0 z-10 overflow-visible">
               {barValues.length > 0 && barMarkerValues.length === barValues.length ? (
                 <Suspense fallback={<div className="grid h-full place-items-center text-[10px] font-bold text-slate-400">Loading chart...</div>}>
                   <ApexBarChart
@@ -2847,6 +2890,8 @@ function WidgetSlot({
               ) : (
                 <div className="grid h-full place-items-center px-2 text-center text-[10px] font-bold text-slate-400">{barStatus}</div>
               )}
+                </div>
+              </div>
             </div>
           ) : isStackBar ? (
             <div className="workspace-chart absolute inset-1 overflow-visible rounded bg-white">
@@ -2888,7 +2933,7 @@ function WidgetSlot({
               )}
             </div>
           ) : isRadarChart ? (
-            <div className="workspace-chart absolute inset-1 overflow-visible rounded bg-white">
+            <div className="workspace-chart absolute inset-0 overflow-visible rounded bg-white">
               {canRenderRadar ? (
                 <Suspense fallback={<div className="grid h-full place-items-center text-[10px] font-bold text-slate-400">Loading chart...</div>}>
                   <ApexRadarChart
@@ -5063,6 +5108,7 @@ export function BoxWorkspaceEditor({
           barMarkerZoneLowColor: dragData.template.type === "bar-markers" ? "#fee2e2" : undefined,
           barMarkerZoneMidColor: dragData.template.type === "bar-markers" ? "#fef3c7" : undefined,
           barMarkerZoneHighColor: dragData.template.type === "bar-markers" ? "#dcfce7" : undefined,
+          barMarkerZoneOpacity: dragData.template.type === "bar-markers" ? 32 : undefined,
           barBorderRadius: dragData.template.type === "bar" || dragData.template.type === "bar-markers" || dragData.template.type === "stack-bar" || dragData.template.type === "stack-100-bar" || dragData.template.type === "stack-100-column" || dragData.template.type === "column-rotated-labels" ? 6 : undefined,
           radarStrokeWidth: dragData.template.type === "radar-polygon" ? 2 : undefined,
           radarFillOpacity: dragData.template.type === "radar-polygon" ? 0.2 : undefined,

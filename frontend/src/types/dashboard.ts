@@ -113,6 +113,7 @@ export type WorkspaceWidget = {
   barMarkerZoneLowColor?: string;
   barMarkerZoneMidColor?: string;
   barMarkerZoneHighColor?: string;
+  barMarkerZoneOpacity?: number;
   barBorderRadius?: number;
   stackCategories?: Array<{
     id: string;

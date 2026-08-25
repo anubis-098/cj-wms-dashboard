@@ -23,17 +23,10 @@ export default function ApexBarChart({ data = [], markerData, series, options }:
     barShape?.borderRadiusWhenStacked ?? "last",
     barShape?.horizontal ? "horizontal" : "vertical",
   ].join(":");
-  const appearanceRenderKey = JSON.stringify({
-    annotations: options.annotations,
-    colors: options.colors,
-    events: Object.keys(options.chart?.events ?? {}),
-    legend: options.legend,
-    max: options.xaxis && !Array.isArray(options.xaxis) ? options.xaxis.max : undefined,
-  });
 
   return (
     <Chart
-      key={`${markerRenderKey}:${shapeRenderKey}:${appearanceRenderKey}`}
+      key={`${markerRenderKey}:${shapeRenderKey}`}
       type="bar"
       width="100%"
       height="100%"

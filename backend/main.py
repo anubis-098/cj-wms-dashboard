@@ -213,6 +213,7 @@ class WorkspaceWidget(BaseModel):
     barMarkerZoneLowColor: str = "#fee2e2"
     barMarkerZoneMidColor: str = "#fef3c7"
     barMarkerZoneHighColor: str = "#dcfce7"
+    barMarkerZoneOpacity: int = 32
     barBorderRadius: int = 6
     stackCategories: list[StackBarCategory] = Field(default_factory=list)
     stackSeries: list[StackBarSeries] = Field(default_factory=list)
