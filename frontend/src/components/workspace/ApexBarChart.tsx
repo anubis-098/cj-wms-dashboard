@@ -14,7 +14,7 @@ type ApexBarChartProps = {
 
 export default function ApexBarChart({ data = [], markerData, series, options }: ApexBarChartProps) {
   const markerRenderKey = markerData
-    ? markerData.map((item) => item.goals.map((goal) => `${goal.strokeColor}:${goal.strokeHeight}:${goal.strokeWidth}`).join(",")).join("|")
+    ? markerData.map((item) => `${item.y}:${item.goals.map((goal) => `${goal.value}:${goal.strokeColor}:${goal.strokeHeight}:${goal.strokeWidth}`).join(",")}`).join("|")
     : "standard-bar";
   const barShape = options.plotOptions?.bar;
   const shapeRenderKey = [

@@ -645,16 +645,27 @@ function drawBarTargetLabels(
     if (!chartRoot) return;
     chartRoot.querySelectorAll(".cj-bar-target-label").forEach((label) => label.remove());
     if (!settings.visible || !settings.text.trim()) return;
+    const svg = chartRoot.querySelector<SVGSVGElement>("svg.apexcharts-svg");
+    const svgMatrix = svg?.getScreenCTM();
+    if (!svg || !svgMatrix) return;
+    const overlay = document.createElementNS("http://www.w3.org/2000/svg", "g");
+    overlay.setAttribute("class", "cj-bar-target-label");
+    overlay.setAttribute("pointer-events", "none");
+    const inverseSvgMatrix = svgMatrix.inverse();
 
     chartRoot.querySelectorAll<SVGGElement>(".apexcharts-bar-goals-groups").forEach((goalGroup) => {
       const line = goalGroup.querySelector<SVGLineElement>("line");
-      if (!line) return;
-      const x = Number(line.getAttribute("x1") ?? 0);
-      const y = Math.min(Number(line.getAttribute("y1") ?? 0), Number(line.getAttribute("y2") ?? 0)) - settings.offsetY;
+      const lineMatrix = line?.getScreenCTM();
+      if (!line || !lineMatrix) return;
+      const point = svg.createSVGPoint();
+      point.x = Number(line.getAttribute("x1") ?? 0);
+      point.y = Math.min(Number(line.getAttribute("y1") ?? 0), Number(line.getAttribute("y2") ?? 0));
+      const position = point.matrixTransform(lineMatrix).matrixTransform(inverseSvgMatrix);
+      const x = position.x;
+      const y = position.y - settings.offsetY;
       const labelWidth = Math.max(settings.fontSize + 8, settings.text.length * settings.fontSize * 0.62 + 8);
       const labelHeight = settings.fontSize + 6;
       const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
-      group.setAttribute("class", "cj-bar-target-label");
       group.setAttribute("pointer-events", "none");
 
       const background = document.createElementNS("http://www.w3.org/2000/svg", "rect");
@@ -675,8 +686,9 @@ function drawBarTargetLabels(
       text.textContent = settings.text;
 
       group.append(background, text);
-      goalGroup.appendChild(group);
+      overlay.appendChild(group);
     });
+    if (overlay.childNodes.length > 0) svg.appendChild(overlay);
   });
 }
 
@@ -2588,7 +2600,8 @@ function WidgetSlot({
     if (!currentField.matches("input, select, textarea")) return;
 
     const isTextEntry = currentField.matches('input:not([type="checkbox"]):not([type="color"]):not([type="range"]), textarea');
-    const isTabNavigation = event.key === "Tab";
+    if (event.key === "Tab") return;
+    const isTabNavigation = false;
     const isArrowNavigation = isTextEntry && (event.key === "ArrowDown" || event.key === "ArrowUp");
     if (!isTabNavigation && !isArrowNavigation) return;
 
@@ -3764,7 +3777,7 @@ function WidgetSlot({
                                 value={suggestedCell ?? series.cells[categoryIndex] ?? ""}
                                 onChange={(event) => updateSeriesCell(series, categoryIndex, event.target.value)}
                                 onKeyDown={(event) => {
-                                  if (event.key === "Tab" && !event.shiftKey && categoryIndex === 0) {
+                                  if (widget.type === "basic-line" && event.key === "Tab" && !event.shiftKey && categoryIndex === 0) {
                                     confirmRunningSeriesCells(series.id);
                                   }
                                 }}
