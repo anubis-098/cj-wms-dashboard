@@ -640,7 +640,7 @@ function drawBarTargetLabels(
   chartContext: ApexCharts,
   settings: { background: string; color: string; fontSize: number; offsetY: number; text: string; visible: boolean },
 ) {
-  window.requestAnimationFrame(() => {
+  const draw = () => {
     const chartRoot = (chartContext as unknown as { el?: HTMLElement }).el;
     if (!chartRoot) return;
     chartRoot.querySelectorAll(".cj-bar-target-label").forEach((label) => label.remove());
@@ -689,7 +689,10 @@ function drawBarTargetLabels(
       overlay.appendChild(group);
     });
     if (overlay.childNodes.length > 0) svg.appendChild(overlay);
-  });
+  };
+  window.requestAnimationFrame(draw);
+  window.setTimeout(draw, 120);
+  window.setTimeout(draw, 450);
 }
 
 function drawPieValueCallouts(chartContext: ApexCharts) {
@@ -1324,21 +1327,29 @@ function WidgetSlot({
     },
     grid: { borderColor: "#e2e8f0", padding: { left: 4, right: 8, top: -8, bottom: -8 } },
     legend: {
-      customLegendItems: currentBarItems.map((item) => item.label || item.cell),
+      customLegendItems: isBarMarkers
+        ? [...currentBarItems.map((item) => item.label || item.cell), widget?.barMarkerLabelText || "Target"]
+        : currentBarItems.map((item) => item.label || item.cell),
       fontSize: `${chartFontSize}px`,
       fontWeight: 700,
-      markers: { fillColors: currentBarItems.map((_, index) => chartColors[index % chartColors.length]) },
+      markers: {
+        fillColors: [
+          ...currentBarItems.map((_, index) => chartColors[index % chartColors.length]),
+          ...(isBarMarkers ? [widget?.barMarkerColor ?? "#e42f44"] : []),
+        ],
+      },
       position: chartLegendPosition,
       show: chartShowLegend,
+      showForSingleSeries: true,
     },
     plotOptions: { bar: { borderRadius: chartBarBorderRadius, borderRadiusApplication: "around", distributed: true, horizontal: true } },
     states: { active: { filter: { type: "none" } }, hover: { filter: { type: "none" } } },
     tooltip: { enabled: true, y: { formatter: (value) => barPercentageMode ? `${Number(value).toFixed(2)}%` : formatChartTooltipValue(value) } },
     annotations: isBarMarkers && (widget?.barMarkerZoneEnabled ?? false) ? {
       xaxis: [
-        { x: 0, x2: markerZoneLowEnd * markerZoneScale, borderColor: "transparent", fillColor: widget?.barMarkerZoneLowColor ?? "#fee2e2", opacity: 0.34 },
-        { x: markerZoneLowEnd * markerZoneScale, x2: markerZoneMidEnd * markerZoneScale, borderColor: "transparent", fillColor: widget?.barMarkerZoneMidColor ?? "#fef3c7", opacity: 0.34 },
-        { x: markerZoneMidEnd * markerZoneScale, x2: 100 * markerZoneScale, borderColor: "transparent", fillColor: widget?.barMarkerZoneHighColor ?? "#dcfce7", opacity: 0.34 },
+        { x: 0, x2: markerZoneLowEnd * markerZoneScale, borderColor: "transparent", fillColor: widget?.barMarkerZoneLowColor ?? "#fee2e2", opacity: 0.5 },
+        { x: markerZoneLowEnd * markerZoneScale, x2: markerZoneMidEnd * markerZoneScale, borderColor: "transparent", fillColor: widget?.barMarkerZoneMidColor ?? "#fef3c7", opacity: 0.5 },
+        { x: markerZoneMidEnd * markerZoneScale, x2: 100 * markerZoneScale, borderColor: "transparent", fillColor: widget?.barMarkerZoneHighColor ?? "#dcfce7", opacity: 0.5 },
       ],
     } : undefined,
     xaxis: {
@@ -1647,7 +1658,7 @@ function WidgetSlot({
     legend: { fontSize: `${chartFontSize}px`, fontWeight: 700, position: chartLegendPosition, show: chartShowLegend },
     markers: {
       size: widget?.radarMarkerSize ?? 4,
-      strokeColors: "var(--chart-surface)",
+      strokeColors: ["#ffffff"],
       strokeWidth: 2,
       hover: { sizeOffset: 2 },
     },
@@ -1660,13 +1671,22 @@ function WidgetSlot({
       },
     },
     stroke: { width: widget?.radarStrokeWidth ?? 2 },
-    tooltip: { shared: true, y: { formatter: formatChartTooltipValue } },
+    tooltip: { intersect: false, shared: false, y: { formatter: formatChartTooltipValue } },
     xaxis: {
       categories: currentStackCategories.map((category) => category.label),
       labels: { style: { fontSize: `${chartFontSize}px`, fontWeight: 700 } },
     },
     yaxis: { max: effectiveBarMax, min: 0, show: false, tickAmount: 5 },
   };
+  const radarCategoryCount = currentStackCategories.length;
+  const radarSeries = currentStackSeries.map((series, seriesIndex) => ({
+    name: series.label || `Series ${seriesIndex + 1}`,
+    data: Array.from({ length: radarCategoryCount }, (_, categoryIndex) => {
+      const value = Number(stackValues[seriesIndex]?.[categoryIndex]);
+      return Number.isFinite(value) ? Math.max(0, value) : 0;
+    }),
+  }));
+  const canRenderRadar = radarCategoryCount >= 3 && radarSeries.length > 0 && stackValues.length > 0;
 
   useEffect(() => {
     if (!editable) {
@@ -2869,15 +2889,17 @@ function WidgetSlot({
             </div>
           ) : isRadarChart ? (
             <div className="workspace-chart absolute inset-1 overflow-visible rounded bg-white">
-              {stackValues.length > 0 ? (
+              {canRenderRadar ? (
                 <Suspense fallback={<div className="grid h-full place-items-center text-[10px] font-bold text-slate-400">Loading chart...</div>}>
                   <ApexRadarChart
                     options={radarChartOptions}
-                    series={currentStackSeries.map((series, index) => ({ name: series.label, data: stackValues[index] ?? [] }))}
+                    series={radarSeries}
                   />
                 </Suspense>
               ) : (
-                <div className="grid h-full place-items-center px-2 text-center text-[10px] font-bold text-slate-400">{barStatus}</div>
+                <div className="grid h-full place-items-center px-2 text-center text-[10px] font-bold text-slate-400">
+                  {radarCategoryCount < 3 ? "Radar requires at least 3 categories" : barStatus}
+                </div>
               )}
             </div>
           ) : isSimplePie ? (
