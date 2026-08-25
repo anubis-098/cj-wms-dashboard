@@ -1668,6 +1668,11 @@ function WidgetSlot({
     }),
   }));
   const canRenderRadar = radarCategoryCount >= 3 && radarSeries.length > 0 && stackValues.length > 0;
+  const barChartViewportStyle: CSSProperties = chartShowLegend
+    ? chartLegendPosition === "top"
+      ? { height: "calc(100% - 20px)", top: 20 }
+      : { height: "calc(100% - 20px)", top: 0 }
+    : { height: "100%", top: 0 };
 
   function renderBarLegend() {
     if (!chartShowLegend) return null;
@@ -2849,7 +2854,7 @@ function WidgetSlot({
           ) : widget.type === "bar" ? (
             <div className="absolute inset-1 overflow-visible rounded bg-white">
               {renderBarLegend()}
-              <div className={`workspace-chart absolute inset-x-0 overflow-visible ${chartShowLegend && chartLegendPosition === "top" ? "bottom-0 top-5" : chartShowLegend ? "bottom-5 top-0" : "inset-y-0"}`}>
+              <div className="workspace-chart absolute inset-x-0 min-h-0 overflow-visible" style={barChartViewportStyle}>
               {barValues.length > 0 ? (
                 <Suspense fallback={<div className="grid h-full place-items-center text-[10px] font-bold text-slate-400">Loading chart...</div>}>
                   <ApexBarChart options={barChartOptions} data={barValues} />
@@ -2862,7 +2867,7 @@ function WidgetSlot({
           ) : isBarMarkers ? (
             <div className="absolute inset-1 overflow-visible rounded bg-white">
               {renderBarLegend()}
-              <div className={`absolute inset-x-0 overflow-hidden ${chartShowLegend && chartLegendPosition === "top" ? "bottom-0 top-5" : chartShowLegend ? "bottom-5 top-0" : "inset-y-0"}`}>
+              <div className="absolute inset-x-0 min-h-0 overflow-hidden" style={barChartViewportStyle}>
                 {widget.barMarkerZoneEnabled ?? false ? (
                   <div
                     className="pointer-events-none absolute bottom-7 right-2 top-2 z-0 rounded-sm"
