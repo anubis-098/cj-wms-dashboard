@@ -237,12 +237,13 @@ const workspaceCellCount = workspaceColumns * workspaceRows;
 const slotsPerCellColumn = 4;
 const slotsPerCellRow = 4;
 const defaultChartColors = ["#0080c6", "#e42f44", "#ec8922", "#16a085", "#7c3aed", "#64748b", "#84cc16", "#0891b2"];
+const isTvRuntime = /SMART-TV|Tizen|SamsungBrowser/i.test(window.navigator.userAgent);
 const chartAnimations = {
-  animateGradually: { delay: 55, enabled: true },
-  dynamicAnimation: { enabled: true, speed: 1100 },
+  animateGradually: { delay: isTvRuntime ? 0 : 55, enabled: !isTvRuntime },
+  dynamicAnimation: { enabled: true, speed: isTvRuntime ? 400 : 1100 },
   easing: "easeinout" as const,
   enabled: true,
-  speed: 1400,
+  speed: isTvRuntime ? 550 : 1400,
 };
 
 function FontSizeInput({

@@ -7,6 +7,14 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      window.__cjWmsBootTimer = window.setTimeout(function () {
+        var root = document.getElementById("root");
+        if (root && !root.firstChild) {
+          root.innerHTML = '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#fff;color:#334155;font:16px Arial,sans-serif;text-align:center"><div><strong style="display:block;font-size:22px">CJ WMS cannot start</strong><span style="display:block;margin-top:8px">Refresh the TV browser or contact IT Auttha.</span></div></div>';
+        }
+      }, 12000);
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

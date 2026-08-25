@@ -1,13 +1,14 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 
-import { AdminDashboardPage } from "./pages/AdminDashboardPage";
-import { DashboardCustomizePage } from "./pages/DashboardCustomizePage";
-import { LoginPage } from "./pages/LoginPage";
-import { SettingsPage } from "./pages/SettingsPage";
 import { TvDashboardPage } from "./pages/TvDashboardPage";
-import { UploadPage } from "./pages/UploadPage";
 import { fetchDashboard } from "./services/api";
 import type { DashboardResponse } from "./types/dashboard";
+
+const AdminDashboardPage = lazy(() => import("./pages/AdminDashboardPage").then((module) => ({ default: module.AdminDashboardPage })));
+const DashboardCustomizePage = lazy(() => import("./pages/DashboardCustomizePage").then((module) => ({ default: module.DashboardCustomizePage })));
+const LoginPage = lazy(() => import("./pages/LoginPage").then((module) => ({ default: module.LoginPage })));
+const SettingsPage = lazy(() => import("./pages/SettingsPage").then((module) => ({ default: module.SettingsPage })));
+const UploadPage = lazy(() => import("./pages/UploadPage").then((module) => ({ default: module.UploadPage })));
 
 const defaultSettings = {
   refresh_seconds: 60,
@@ -29,10 +30,11 @@ function App() {
   }, []);
 
   useEffect(() => {
+    if (path === "/tv" || path === "/") return;
     fetchDashboard()
       .then(setDashboard)
       .catch(() => setDashboard(null));
-  }, []);
+  }, [path]);
 
   function navigate(nextPath: string) {
     window.history.pushState({}, "", nextPath);
@@ -43,23 +45,15 @@ function App() {
     return <TvDashboardPage />;
   }
 
-  if (!isAuthenticated) {
-    return <LoginPage onLogin={() => setIsAuthenticated(true)} />;
-  }
-
-  if (path === "/upload") {
-    return <UploadPage onNavigate={navigate} />;
-  }
-
-  if (path === "/settings") {
-    return <SettingsPage settings={dashboard?.settings || defaultSettings} onNavigate={navigate} />;
-  }
-
-  if (path === "/customize") {
-    return <DashboardCustomizePage onNavigate={navigate} />;
-  }
-
-  return <AdminDashboardPage dashboard={dashboard} onNavigate={navigate} />;
+  return (
+    <Suspense fallback={<main className="min-h-screen bg-screen-bg" />}>
+      {!isAuthenticated ? <LoginPage onLogin={() => setIsAuthenticated(true)} />
+        : path === "/upload" ? <UploadPage onNavigate={navigate} />
+          : path === "/settings" ? <SettingsPage settings={dashboard?.settings || defaultSettings} onNavigate={navigate} />
+            : path === "/customize" ? <DashboardCustomizePage onNavigate={navigate} />
+              : <AdminDashboardPage dashboard={dashboard} onNavigate={navigate} />}
+    </Suspense>
+  );
 }
 
 export default App;
