@@ -30,6 +30,7 @@ import {
   AlarmClock,
   BarChart3,
   Box,
+  CalendarDays,
   CheckCircle2,
   ChevronDown,
   ChevronUp,
@@ -84,7 +85,7 @@ const ApexLineChart = lazy(() => import("./ApexLineChart"));
 const ApexRadarChart = lazy(() => import("./ApexRadarChart"));
 
 type BoxSize = "1x1" | "2x1" | "2x2" | "1x2";
-type WidgetType = "title" | "chart" | "bar" | "bar-markers" | "stack-bar" | "stack-column" | "stack-100-bar" | "stack-100-column" | "column-rotated-labels" | "basic-line" | "line-annotations" | "radar-polygon" | "simple-pie" | "simple-donut" | "icon" | "gradient-color" | "text" | "text-query" | "excel-table";
+type WidgetType = "title" | "clock" | "date" | "chart" | "bar" | "bar-markers" | "stack-bar" | "stack-column" | "stack-100-bar" | "stack-100-column" | "column-rotated-labels" | "basic-line" | "line-annotations" | "radar-polygon" | "simple-pie" | "simple-donut" | "icon" | "gradient-color" | "text" | "text-query" | "excel-table";
 
 type BoxTemplate = {
   size: BoxSize;
@@ -779,6 +780,8 @@ const boxTemplates: BoxTemplate[] = [
 
 const widgetTemplates: WidgetTemplate[] = [
   { type: "title", label: "Title", icon: <Heading className="h-4 w-4" /> },
+  { type: "clock", label: "Clock", icon: <Clock3 className="h-4 w-4" /> },
+  { type: "date", label: "Date", icon: <CalendarDays className="h-4 w-4" /> },
   { type: "chart", label: "Chart", icon: <BarChart3 className="h-4 w-4" /> },
   { type: "bar", label: "Bar", icon: <GripVertical className="h-4 w-4 rotate-90" /> },
   { type: "bar-markers", label: "Bar with Markers", icon: <BarChart3 className="h-4 w-4" /> },
@@ -961,7 +964,7 @@ function parsePageRange(input: string, pageCount: number) {
 }
 
 function getWidgetFootprint(widget: WorkspaceWidget) {
-  const defaultWidth = isLargeDataWidget(widget.type) ? 4 : widget.type === "gradient-color" ? 4 : widget.type === "title" || widget.type === "text" || widget.type === "text-query" ? 3 : 1;
+  const defaultWidth = isLargeDataWidget(widget.type) ? 4 : widget.type === "gradient-color" ? 4 : widget.type === "title" || widget.type === "text" || widget.type === "text-query" || widget.type === "date" ? 3 : widget.type === "clock" ? 2 : 1;
   const defaultHeight = isLargeDataWidget(widget.type) ? 4 : widget.type === "gradient-color" ? 2 : 1;
   return { width: widget.width ?? defaultWidth, height: widget.height ?? defaultHeight };
 }
@@ -1003,6 +1006,21 @@ function AdaptiveWidgetText({ content: contentOverride, widget }: { content?: st
       {content}
     </span>
   );
+}
+
+function LiveDateTimeWidget({ mode, widget }: { mode: "clock" | "date"; widget: WorkspaceWidget }) {
+  const [now, setNow] = useState(() => new Date());
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const content = mode === "clock"
+    ? `${now.getHours().toString().padStart(2, "0")}:${now.getMinutes().toString().padStart(2, "0")}`
+    : now.toLocaleDateString("en-GB", { day: "2-digit", month: "long", year: "numeric" });
+
+  return <AdaptiveWidgetText content={content} widget={widget} />;
 }
 
 function getWidgetCells(widget: WorkspaceWidget, slotColumns: number) {
@@ -1291,6 +1309,7 @@ function WidgetSlot({
   const isRadarChart = widget?.type === "radar-polygon";
   const isSimplePie = widget?.type === "simple-pie" || widget?.type === "simple-donut";
   const isTextQuery = widget?.type === "text-query";
+  const isLiveDateTime = widget?.type === "clock" || widget?.type === "date";
   const usesMaximumValue = (widget?.type === "bar" && !barPercentageMode) || widget?.type === "bar-markers" || widget?.type === "stack-bar" || widget?.type === "stack-column" || isLineChart || isColumnChart || isRadarChart;
 
   function updateGradientStops(stops: WorkspaceWidget["gradientStops"]) {
@@ -2725,14 +2744,14 @@ function WidgetSlot({
           ref={draggable.setNodeRef}
           data-workspace-widget={widget.id}
           data-widget-selected={editable && isSelected ? "true" : undefined}
-          data-widget-custom-background={widget.type === "title" || widget.type === "text" || isTextQuery ? String(Boolean(widget.useBackgroundColor)) : undefined}
+          data-widget-custom-background={widget.type === "title" || widget.type === "text" || isTextQuery || isLiveDateTime ? String(Boolean(widget.useBackgroundColor)) : undefined}
           className={`group relative grid h-full min-h-0 w-full place-items-center overflow-visible rounded bg-white p-0.5 ${
             editable ? isSelected ? "outline outline-2 outline-offset-2 outline-cj-blue shadow-panel" : "shadow-sm" : ""
           } ${showUpdateNotice && !editable ? "animate-widget-content-update" : ""}`}
           style={{
             "--widget-chart-font-size": `${chartFontSize}px`,
             "--widget-background-color": widget.backgroundColor ?? "#ffffff",
-            ...(widget.type === "title" || widget.type === "text" || isTextQuery
+            ...(widget.type === "title" || widget.type === "text" || isTextQuery || isLiveDateTime
               ? { backgroundColor: widget.useBackgroundColor ? (widget.backgroundColor ?? "#ffffff") : undefined }
               : {}),
           } as CSSProperties}
@@ -2740,7 +2759,7 @@ function WidgetSlot({
           onClick={(event) => {
             event.stopPropagation();
             if (editable) {
-              if (!isSelected && (widget.type === "title" || widget.type === "text" || isTextQuery || widget.type === "icon" || widget.type === "gradient-color" || isLargeDataWidget(widget.type))) placeToolbarBesideWidget(event.currentTarget);
+              if (!isSelected && (widget.type === "title" || widget.type === "text" || isTextQuery || isLiveDateTime || widget.type === "icon" || widget.type === "gradient-color" || isLargeDataWidget(widget.type))) placeToolbarBesideWidget(event.currentTarget);
               setIsSelected(true);
               setIsEditing(widget.type === "title" || widget.type === "text");
             }
@@ -3000,6 +3019,8 @@ function WidgetSlot({
             textQueryLoaded ? <AdaptiveWidgetText content={textQueryValue} widget={widget} /> : (
               <div className="grid h-full w-full place-items-center px-2 text-center text-[10px] font-bold text-slate-400">{textQueryStatus}</div>
             )
+          ) : isLiveDateTime ? (
+            <LiveDateTimeWidget mode={widget.type === "clock" ? "clock" : "date"} widget={widget} />
           ) : widget.type === "gradient-color" ? (
             <div
               className="absolute inset-0"
@@ -3060,7 +3081,7 @@ function WidgetSlot({
             </div>
           ), document.body) : null}
 
-          {editable && isSelected && (widget.type === "title" || widget.type === "text" || isTextQuery) ? createPortal((
+          {editable && isSelected && (widget.type === "title" || widget.type === "text" || isTextQuery || isLiveDateTime) ? createPortal((
             <div
               data-widget-toolbar={widget.id}
               className={`fixed z-[100] max-h-[calc(100vh-6rem)] overflow-y-auto ${isTextQuery ? "w-80" : "w-72"}`}
@@ -3076,7 +3097,7 @@ function WidgetSlot({
                   onPointerDown={startToolbarDrag}
                 >
                   <GripVertical className="h-4 w-4 text-slate-400" />
-                  {widget.type === "title" ? "Title" : isTextQuery ? "Text Query" : "Text"} tools
+                  {widget.type === "title" ? "Title" : widget.type === "clock" ? "Clock" : widget.type === "date" ? "Date" : isTextQuery ? "Text Query" : "Text"} tools
                 </button>
                 {renderWidgetToolbarActions()}
                 {isTextQuery ? (
@@ -5100,7 +5121,7 @@ export function BoxWorkspaceEditor({
           type: dragData.template.type,
           label: dragData.template.label,
           slot: overData.slot,
-          width: isLargeDataWidget(dragData.template.type) ? 4 : dragData.template.type === "gradient-color" ? 4 : dragData.template.type === "title" || dragData.template.type === "text" || dragData.template.type === "text-query" ? 3 : 1,
+          width: isLargeDataWidget(dragData.template.type) ? 4 : dragData.template.type === "gradient-color" ? 4 : dragData.template.type === "title" || dragData.template.type === "text" || dragData.template.type === "text-query" || dragData.template.type === "date" ? 3 : dragData.template.type === "clock" ? 2 : 1,
           height: isLargeDataWidget(dragData.template.type) ? 4 : dragData.template.type === "gradient-color" ? 2 : 1,
           content: dragData.template.label,
           fontSize: dragData.template.type === "title" ? 20 : 16,
@@ -5557,7 +5578,7 @@ export function BoxWorkspaceEditor({
               <div className="min-w-0">
                 <h3 className="text-[10px] font-black uppercase text-slate-400">Content</h3>
                 <div className="mt-1 grid gap-1.5">
-                  {widgetTemplates.filter((template) => template.type === "title" || template.type === "text" || template.type === "text-query" || template.type === "icon" || template.type === "gradient-color").map((template) => (
+                  {widgetTemplates.filter((template) => template.type === "title" || template.type === "clock" || template.type === "date" || template.type === "text" || template.type === "text-query" || template.type === "icon" || template.type === "gradient-color").map((template) => (
                     <DraggableWidgetTemplate key={template.type} template={template} />
                   ))}
                 </div>
@@ -5647,8 +5668,8 @@ export function BoxWorkspaceEditor({
         </PageCopyPanel>
       ) : null}
 
-      <footer className="pointer-events-none relative z-10 -mt-16 translate-y-[3px] px-4 pb-4 text-center text-[10px] font-medium text-slate-400">
-        © 2026 copyright reserved , CJ Logistics , IT Auttha.
+      <footer className="pointer-events-none relative z-10 -mt-16 translate-y-[7px] px-4 pb-4 text-center text-[10px] font-medium text-slate-400">
+        © 2026 copyright reserved , CJ Logistics , IT Autthavut.
       </footer>
 
       <DragOverlay>
