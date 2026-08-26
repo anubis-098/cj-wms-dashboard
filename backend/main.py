@@ -7,7 +7,7 @@ import math
 import os
 import uuid
 from collections import OrderedDict
-from datetime import datetime
+from datetime import date, datetime, timedelta, timezone
 from io import BytesIO
 from pathlib import Path
 from threading import Lock
@@ -15,6 +15,7 @@ from time import monotonic
 from typing import Any
 from urllib.parse import quote_plus
 from urllib.request import Request as UrlRequest, urlopen
+from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.encoders import jsonable_encoder
@@ -43,6 +44,7 @@ FILE_SERVER_SYNC_SECONDS = max(60, int(os.getenv("FILE_SERVER_SYNC_SECONDS", "18
 FILE_SERVER_MAX_FILE_BYTES = int(os.getenv("FILE_SERVER_MAX_FILE_MB", "25")) * 1024 * 1024
 FILE_SERVER_MIRROR_URL = os.getenv("FILE_SERVER_MIRROR_URL", "").strip()
 FILE_SERVER_MIRROR_TOKEN = os.getenv("FILE_SERVER_MIRROR_TOKEN", "")
+APP_TIMEZONE = os.getenv("APP_TIMEZONE", "Asia/Bangkok")
 excel_sheet_cache: OrderedDict[tuple[str, str], tuple[float, str, list[list[Any]], list[list[str]]]] = OrderedDict()
 excel_cache_lock = Lock()
 excel_sheet_locks: dict[tuple[str, str], Lock] = {}
@@ -500,17 +502,39 @@ def save_workspace_layout(layout: WorkspaceLayout) -> dict[str, Any]:
         raise require_database_error(exc) from exc
 
 
-def select_latest_workbook_sheet(file_data: bytes) -> str:
+def parse_dated_sheet_name(sheet_name: str) -> date | None:
+    normalized = " ".join(sheet_name.strip().replace("-", " ").split())
+    for date_format in ("%d %b %Y", "%d %b %y"):
+        try:
+            return datetime.strptime(normalized, date_format).date()
+        except ValueError:
+            continue
+    return None
+
+
+def current_app_date() -> date:
+    try:
+        return datetime.now(ZoneInfo(APP_TIMEZONE)).date()
+    except Exception:
+        return datetime.now(timezone(timedelta(hours=7))).date()
+
+
+def select_default_workbook_sheet(file_data: bytes, target_date: date | None = None) -> str:
     workbook = load_workbook(BytesIO(file_data), read_only=True, data_only=True)
     try:
-        dated_sheets: list[tuple[datetime, str]] = []
+        dated_sheets: list[tuple[date, str]] = []
         for sheet_name in workbook.sheetnames:
-            try:
-                sheet_date = datetime.strptime(" ".join(sheet_name.split()), "%d %b %Y")
+            sheet_date = parse_dated_sheet_name(sheet_name)
+            if sheet_date is not None:
                 dated_sheets.append((sheet_date, sheet_name))
-            except ValueError:
-                continue
         if dated_sheets:
+            requested_date = target_date or current_app_date()
+            exact_match = next((sheet_name for sheet_date, sheet_name in dated_sheets if sheet_date == requested_date), None)
+            if exact_match:
+                return exact_match
+            past_or_today = [item for item in dated_sheets if item[0] <= requested_date]
+            if past_or_today:
+                return max(past_or_today, key=lambda item: item[0])[1]
             return max(dated_sheets, key=lambda item: item[0])[1]
         if not workbook.sheetnames:
             raise ValueError("The latest File Server workbook has no sheets")
@@ -647,13 +671,22 @@ def sync_latest_file_server_excel() -> dict[str, Any]:
             with SessionLocal() as session:
                 upload_exists = session.get(ExcelUpload, upload_id) is not None
         if upload_id and upload_exists and all(previous_state.get(key) == value for key, value in signature.items()):
+            file_data = source_path.read_bytes()
+            default_sheet = select_default_workbook_sheet(file_data)
+            updated_widgets = update_workspace_widgets_sheet(upload_id, default_sheet, rebind_orphaned=True)
             file_server_sync_status.update({
                 "state": "idle",
                 "latest_filename": source_path.name,
                 "upload_id": upload_id,
-                "message": "Latest file is already synchronized",
+                "message": f"Latest file is already synchronized; using sheet {default_sheet}",
             })
-            return {"changed": False, "upload_id": upload_id, "filename": source_path.name}
+            return {
+                "changed": False,
+                "upload_id": upload_id,
+                "filename": source_path.name,
+                "sheet": default_sheet,
+                "updated_widgets": updated_widgets,
+            }
 
         file_data = source_path.read_bytes()
         if not file_data:
@@ -673,7 +706,7 @@ def sync_latest_file_server_excel() -> dict[str, Any]:
             target_path.unlink(missing_ok=True)
             raise
         normalized_data = normalize_json_numbers(jsonable_encoder(dashboard_data))
-        latest_sheet = select_latest_workbook_sheet(file_data)
+        latest_sheet = select_default_workbook_sheet(file_data)
 
         previous_stored_filename: str | None = None
         with SessionLocal() as session:
@@ -749,9 +782,9 @@ async def run_file_server_sync() -> dict[str, Any]:
 
         await asyncio.to_thread(request_mirror)
     result = await asyncio.to_thread(sync_latest_file_server_excel)
+    if result.get("updated_widgets"):
+        broadcast_workspace_event("workspace-layout-saved", datetime.now().isoformat())
     if result["changed"]:
-        if result.get("updated_widgets"):
-            broadcast_workspace_event("workspace-layout-saved", datetime.now().isoformat())
         broadcast_workspace_event("excel-upload-replaced", result["upload_id"])
     return result
 

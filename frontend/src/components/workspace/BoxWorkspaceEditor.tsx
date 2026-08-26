@@ -1716,17 +1716,18 @@ function WidgetSlot({
             const widthPercent = Math.max(0, Math.min(100, (value / effectiveBarMax) * 100));
             const displayValue = barPercentageMode ? `${value.toFixed(1)}%` : value.toLocaleString(undefined, { maximumFractionDigits: 2 });
             return (
-              <div key={item.id} className="grid min-h-0 flex-1 grid-cols-[clamp(52px,22%,96px)_minmax(0,1fr)] items-center gap-1.5 px-2">
+              <div key={item.id} className="grid min-h-0 flex-1 grid-cols-[clamp(42px,15%,72px)_minmax(0,1fr)] items-center gap-1.5 px-1">
                 <div className="truncate text-right font-bold text-slate-600" style={{ fontSize: `${chartFontSize}px` }} title={item.label || item.cell}>
                   {item.label || item.cell}
                 </div>
-                <div
-                  className="relative h-[62%] min-h-3 overflow-visible rounded-sm"
-                  style={{ backgroundImage: "linear-gradient(to right, transparent calc(25% - 1px), #e2e8f0 25%, transparent calc(25% + 1px), transparent calc(50% - 1px), #e2e8f0 50%, transparent calc(50% + 1px), transparent calc(75% - 1px), #e2e8f0 75%, transparent calc(75% + 1px))" }}
-                  title={`${item.label || item.cell}: ${displayValue}`}
-                >
+                <div className="relative h-[62%] min-h-3 overflow-visible rounded-sm" title={`${item.label || item.cell}: ${displayValue}`}>
+                  <div className="pointer-events-none absolute inset-0 z-0 rounded-sm" aria-hidden="true">
+                    {axisSteps.map((step) => (
+                      <span key={step} className="absolute inset-y-0 w-px bg-slate-200" style={{ left: `${step}%` }} />
+                    ))}
+                  </div>
                   <div
-                    className="relative flex h-full min-w-[2px] items-center justify-end rounded-[inherit] px-1.5 text-right font-extrabold text-white transition-[width] duration-700 ease-out"
+                    className="relative z-10 flex h-full min-w-[2px] items-center justify-end rounded-[inherit] px-1.5 text-right font-extrabold text-white transition-[width] duration-700 ease-out"
                     style={{ backgroundColor: chartColors[index % chartColors.length], borderRadius: `${chartBarBorderRadius}px`, fontSize: `${chartFontSize}px`, width: `${widthPercent}%` }}
                   >
                     {widthPercent >= 18 ? displayValue : null}
@@ -1741,7 +1742,7 @@ function WidgetSlot({
             );
           })}
         </div>
-        <div className="grid grid-cols-[clamp(52px,22%,96px)_minmax(0,1fr)] gap-1.5 px-2 text-[8px] font-bold text-slate-400">
+        <div className="grid grid-cols-[clamp(42px,15%,72px)_minmax(0,1fr)] gap-1.5 px-1 text-[8px] font-bold text-slate-400">
           <span />
           <div className="flex justify-between border-t border-slate-300 pt-0.5">
             {axisSteps.map((step) => <span key={step}>{barPercentageMode ? `${step}%` : Math.round((effectiveBarMax * step) / 100).toLocaleString()}</span>)}
