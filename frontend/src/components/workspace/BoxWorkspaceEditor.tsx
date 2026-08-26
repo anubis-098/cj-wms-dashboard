@@ -1327,7 +1327,7 @@ function WidgetSlot({
     const sourceUploadId = widget.sourceUploadId;
     const sheetName = widget.sheetName;
     const fallbackMaximum = widget.barMax ?? 100;
-    const shouldRoundMaximum = (widget.type === "basic-line" || widget.type === "column-rotated-labels") && /^MAX\s*\(/i.test(input);
+    const shouldRoundMaximum = (widget.type === "basic-line" || widget.type === "column-rotated-labels" || widget.type === "stack-column") && /^MAX\s*\(/i.test(input);
     let active = true;
 
     function loadMaximum() {
@@ -1440,7 +1440,14 @@ function WidgetSlot({
     dataLabels: {
       enabled: true,
       background: { enabled: false },
-      ...(isStackColumnPercentage ? { formatter: (value: number) => `${Math.round(Number(value))}%` } : {}),
+      ...(isStackColumn || isStackColumnPercentage ? {
+        formatter: (value: number, options) => {
+          const categoryIndex = options?.dataPointIndex ?? 0;
+          const total = currentStackSeries.reduce((sum, _, seriesIndex) => sum + Number(stackValues[seriesIndex]?.[categoryIndex] ?? 0), 0);
+          const percentage = total > 0 ? (Number(value) / total) * 100 : 0;
+          return `${percentage.toFixed(1)}%`;
+        },
+      } : {}),
       style: { fontSize: `${chartFontSize}px`, fontWeight: 800 },
     },
     grid: {
@@ -1485,7 +1492,7 @@ function WidgetSlot({
     yaxis: isStackColumnPercentage
       ? { max: 100, min: 0, labels: { formatter: (value) => isStackColumn100 ? `${Math.round(Number(value))}%` : `${Math.round(Number(value))}`, style: { fontSize: `${chartFontSize}px`, fontWeight: 700 } } }
       : isStackColumn
-        ? { max: effectiveBarMax, min: 0, labels: { formatter: (value) => Number(value).toLocaleString(), style: { fontSize: `${chartFontSize}px`, fontWeight: 700 } } }
+        ? { max: effectiveBarMax, min: 0, labels: { formatter: (value) => Math.round(Number(value) / 1000) * 1000 === 0 ? "0" : (Math.round(Number(value) / 1000) * 1000).toLocaleString(), style: { fontSize: `${chartFontSize}px`, fontWeight: 700 } } }
         : { labels: { maxWidth: 90, style: { fontSize: `${chartFontSize}px`, fontWeight: 700 } } },
   };
   const lineChartOptions: ApexOptions = {
@@ -1991,10 +1998,7 @@ function WidgetSlot({
             ? values.map((value) => value === null ? null : Math.abs(value))
             : isLineChart
               ? values
-              : values.map((value) => {
-                const positiveValue = Math.max(0, value ?? 0);
-                return widgetType === "stack-column" ? Math.ceil(positiveValue / 1000) * 1000 : positiveValue;
-              });
+              : values.map((value) => Math.max(0, value ?? 0));
           const chartValues = widgetType === "stack-column" && (widget?.stackColumnPercentage ?? false)
             ? rawChartValues.map((_, valueIndex) => {
               const categoryIndex = valueIndex % currentStackCategories.length;
@@ -3689,8 +3693,8 @@ function WidgetSlot({
                 {widget.type === "stack-column" ? (
                   <label className="flex items-center justify-between rounded border border-slate-200 bg-slate-50 p-2 text-[10px] font-black uppercase text-slate-500">
                     <span>
-                      Display as %
-                      <span className="mt-0.5 block text-[9px] font-bold normal-case text-slate-400">Cell values are rounded up to the nearest 1,000 automatically.</span>
+                      Normalize bars to 100%
+                      <span className="mt-0.5 block text-[9px] font-bold normal-case text-slate-400">Series labels always show %. Enable this to scale each stack to 100%.</span>
                     </span>
                     <input
                       className="h-4 w-4 accent-cj-blue"
