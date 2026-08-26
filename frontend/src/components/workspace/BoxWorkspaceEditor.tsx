@@ -1993,7 +1993,7 @@ function WidgetSlot({
               ? values
               : values.map((value) => {
                 const positiveValue = Math.max(0, value ?? 0);
-                return widgetType === "stack-column" ? Math.round(positiveValue) : positiveValue;
+                return widgetType === "stack-column" ? Math.ceil(positiveValue / 1000) * 1000 : positiveValue;
               });
           const chartValues = widgetType === "stack-column" && (widget?.stackColumnPercentage ?? false)
             ? rawChartValues.map((_, valueIndex) => {
@@ -3690,7 +3690,7 @@ function WidgetSlot({
                   <label className="flex items-center justify-between rounded border border-slate-200 bg-slate-50 p-2 text-[10px] font-black uppercase text-slate-500">
                     <span>
                       Display as %
-                      <span className="mt-0.5 block text-[9px] font-bold normal-case text-slate-400">Cell values are rounded to integers automatically.</span>
+                      <span className="mt-0.5 block text-[9px] font-bold normal-case text-slate-400">Cell values are rounded up to the nearest 1,000 automatically.</span>
                     </span>
                     <input
                       className="h-4 w-4 accent-cj-blue"
