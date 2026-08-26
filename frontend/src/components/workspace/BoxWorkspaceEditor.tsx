@@ -84,7 +84,7 @@ const ApexLineChart = lazy(() => import("./ApexLineChart"));
 const ApexRadarChart = lazy(() => import("./ApexRadarChart"));
 
 type BoxSize = "1x1" | "2x1" | "2x2" | "1x2";
-type WidgetType = "title" | "chart" | "bar" | "bar-markers" | "stack-bar" | "stack-100-bar" | "stack-100-column" | "column-rotated-labels" | "basic-line" | "line-annotations" | "radar-polygon" | "simple-pie" | "simple-donut" | "icon" | "gradient-color" | "text" | "text-query" | "excel-table";
+type WidgetType = "title" | "chart" | "bar" | "bar-markers" | "stack-bar" | "stack-column" | "stack-100-bar" | "stack-100-column" | "column-rotated-labels" | "basic-line" | "line-annotations" | "radar-polygon" | "simple-pie" | "simple-donut" | "icon" | "gradient-color" | "text" | "text-query" | "excel-table";
 
 type BoxTemplate = {
   size: BoxSize;
@@ -338,7 +338,7 @@ const fontWeightOptions = [
 ];
 
 function isLargeDataWidget(type: string) {
-  return type === "excel-table" || type === "bar" || type === "bar-markers" || type === "stack-bar" || type === "stack-100-bar" || type === "stack-100-column" || type === "column-rotated-labels" || type === "basic-line" || type === "line-annotations" || type === "radar-polygon" || type === "simple-pie" || type === "simple-donut";
+  return type === "excel-table" || type === "bar" || type === "bar-markers" || type === "stack-bar" || type === "stack-column" || type === "stack-100-bar" || type === "stack-100-column" || type === "column-rotated-labels" || type === "basic-line" || type === "line-annotations" || type === "radar-polygon" || type === "simple-pie" || type === "simple-donut";
 }
 
 function excelColumnToNumber(column: string) {
@@ -648,65 +648,6 @@ function roundColumnDataLabelBackgrounds(chartContext: ApexCharts, fixedSize?: n
   });
 }
 
-function drawBarTargetLabels(
-  chartContext: ApexCharts,
-  settings: { background: string; color: string; fontSize: number; offsetY: number; text: string; visible: boolean },
-) {
-  const draw = () => {
-    const chartRoot = (chartContext as unknown as { el?: HTMLElement }).el;
-    if (!chartRoot) return;
-    chartRoot.querySelectorAll(".cj-bar-target-label").forEach((label) => label.remove());
-    if (!settings.visible || !settings.text.trim()) return;
-    const svg = chartRoot.querySelector<SVGSVGElement>("svg.apexcharts-svg");
-    const svgMatrix = svg?.getScreenCTM();
-    if (!svg || !svgMatrix) return;
-    const overlay = document.createElementNS("http://www.w3.org/2000/svg", "g");
-    overlay.setAttribute("class", "cj-bar-target-label");
-    overlay.setAttribute("pointer-events", "none");
-    const inverseSvgMatrix = svgMatrix.inverse();
-
-    chartRoot.querySelectorAll<SVGGElement>(".apexcharts-bar-goals-groups").forEach((goalGroup) => {
-      const line = goalGroup.querySelector<SVGLineElement>("line");
-      const lineMatrix = line?.getScreenCTM();
-      if (!line || !lineMatrix) return;
-      const point = svg.createSVGPoint();
-      point.x = Number(line.getAttribute("x1") ?? 0);
-      point.y = Math.min(Number(line.getAttribute("y1") ?? 0), Number(line.getAttribute("y2") ?? 0));
-      const position = point.matrixTransform(lineMatrix).matrixTransform(inverseSvgMatrix);
-      const x = position.x;
-      const y = position.y - settings.offsetY;
-      const labelWidth = Math.max(settings.fontSize + 8, settings.text.length * settings.fontSize * 0.62 + 8);
-      const labelHeight = settings.fontSize + 6;
-      const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
-      group.setAttribute("pointer-events", "none");
-
-      const background = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-      background.setAttribute("x", String(x - labelWidth / 2));
-      background.setAttribute("y", String(y - labelHeight));
-      background.setAttribute("width", String(labelWidth));
-      background.setAttribute("height", String(labelHeight));
-      background.setAttribute("rx", String(Math.min(4, labelHeight / 2)));
-      background.setAttribute("fill", settings.background);
-
-      const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
-      text.setAttribute("x", String(x));
-      text.setAttribute("y", String(y - 4));
-      text.setAttribute("fill", settings.color);
-      text.setAttribute("font-size", String(settings.fontSize));
-      text.setAttribute("font-weight", "800");
-      text.setAttribute("text-anchor", "middle");
-      text.textContent = settings.text;
-
-      group.append(background, text);
-      overlay.appendChild(group);
-    });
-    if (overlay.childNodes.length > 0) svg.appendChild(overlay);
-  };
-  window.requestAnimationFrame(draw);
-  window.setTimeout(draw, 120);
-  window.setTimeout(draw, 450);
-}
-
 function drawPieValueCallouts(chartContext: ApexCharts) {
   window.requestAnimationFrame(() => {
     const chartRoot = (chartContext as unknown as { el?: Element }).el;
@@ -842,6 +783,7 @@ const widgetTemplates: WidgetTemplate[] = [
   { type: "bar", label: "Bar", icon: <GripVertical className="h-4 w-4 rotate-90" /> },
   { type: "bar-markers", label: "Bar with Markers", icon: <BarChart3 className="h-4 w-4" /> },
   { type: "stack-bar", label: "Stack Bar", icon: <BarChart3 className="h-4 w-4" /> },
+  { type: "stack-column", label: "Stack Column", icon: <BarChart3 className="h-4 w-4 rotate-90" /> },
   { type: "stack-100-bar", label: "Stack 100% Bar", icon: <BarChart3 className="h-4 w-4" /> },
   { type: "stack-100-column", label: "Stacked Column 100%", icon: <BarChart3 className="h-4 w-4 rotate-90" /> },
   { type: "column-rotated-labels", label: "Column with Rotated Labels", icon: <BarChart3 className="h-4 w-4" /> },
@@ -1306,23 +1248,10 @@ function WidgetSlot({
   const markerZoneBackground = `linear-gradient(to right, ${widget?.barMarkerZoneLowColor ?? "#fee2e2"} 0%, ${widget?.barMarkerZoneLowColor ?? "#fee2e2"} ${markerZoneLowEnd}%, ${widget?.barMarkerZoneMidColor ?? "#fef3c7"} ${markerZoneLowEnd}%, ${widget?.barMarkerZoneMidColor ?? "#fef3c7"} ${markerZoneMidEnd}%, ${widget?.barMarkerZoneHighColor ?? "#dcfce7"} ${markerZoneMidEnd}%, ${widget?.barMarkerZoneHighColor ?? "#dcfce7"} 100%)`;
   const currentLineAnnotations = widget?.lineAnnotations ?? [];
   const SelectedIcon = iconOptions.find((option) => option.name === widget?.iconName)?.icon ?? Package;
-  const renderBarTargetLabels = (chart: ApexCharts) => drawBarTargetLabels(chart, {
-    background: widget?.barMarkerColor ?? "#e42f44",
-    color: widget?.barMarkerLabelTextColor ?? "#ffffff",
-    fontSize: widget?.barMarkerLabelFontSize ?? 9,
-    offsetY: widget?.barMarkerLabelOffsetY ?? 4,
-    text: widget?.barMarkerLabelText ?? "Target",
-    visible: isBarMarkers && (widget?.barMarkerShowLabel ?? true),
-  });
   const barChartOptions: ApexOptions = {
     chart: {
       animations: chartAnimations,
       background: "transparent",
-      events: isBarMarkers ? {
-        animationEnd: renderBarTargetLabels,
-        mounted: renderBarTargetLabels,
-        updated: renderBarTargetLabels,
-      } : undefined,
       parentHeightOffset: 0,
       toolbar: { show: false },
     },
@@ -1353,14 +1282,15 @@ function WidgetSlot({
     yaxis: { labels: { maxWidth: 90, style: { fontSize: `${chartFontSize}px`, fontWeight: 700 } } },
   };
   const isStackColumn100 = widget?.type === "stack-100-column";
-  const isStackBar = widget?.type === "stack-bar" || widget?.type === "stack-100-bar" || isStackColumn100;
+  const isStackColumn = widget?.type === "stack-column" || isStackColumn100;
+  const isStackBar = widget?.type === "stack-bar" || widget?.type === "stack-column" || widget?.type === "stack-100-bar" || isStackColumn100;
   const isLineChart = widget?.type === "basic-line" || widget?.type === "line-annotations";
   const isAnnotatedLine = widget?.type === "line-annotations";
   const isColumnChart = widget?.type === "column-rotated-labels";
   const isRadarChart = widget?.type === "radar-polygon";
   const isSimplePie = widget?.type === "simple-pie" || widget?.type === "simple-donut";
   const isTextQuery = widget?.type === "text-query";
-  const usesMaximumValue = (widget?.type === "bar" && !barPercentageMode) || widget?.type === "bar-markers" || widget?.type === "stack-bar" || isLineChart || isColumnChart || isRadarChart;
+  const usesMaximumValue = (widget?.type === "bar" && !barPercentageMode) || widget?.type === "bar-markers" || widget?.type === "stack-bar" || widget?.type === "stack-column" || isLineChart || isColumnChart || isRadarChart;
 
   function updateGradientStops(stops: WorkspaceWidget["gradientStops"]) {
     if (!widget || !stops?.length) return;
@@ -1517,8 +1447,8 @@ function WidgetSlot({
       padding: {
         left: 4,
         right: 8,
-        top: widget?.type === "stack-100-bar" ? -16 : isStackColumn100 ? 4 : -4,
-        bottom: widget?.type === "stack-100-bar" ? -12 : isStackColumn100 ? 0 : -8,
+        top: widget?.type === "stack-100-bar" ? -16 : isStackColumn100 ? 4 : isStackColumn ? 4 : -4,
+        bottom: widget?.type === "stack-100-bar" ? -12 : isStackColumn100 ? 0 : isStackColumn ? 4 : -8,
       },
     },
     legend: {
@@ -1533,10 +1463,10 @@ function WidgetSlot({
         borderRadius: chartBarBorderRadius,
         borderRadiusApplication: "around",
         borderRadiusWhenStacked: "all",
-        ...(isStackColumn100
+        ...(isStackColumn
           ? { columnWidth: "64%" }
           : { barHeight: widget?.type === "stack-100-bar" ? "92%" : "70%" }),
-        horizontal: !isStackColumn100,
+        horizontal: !isStackColumn,
       },
     },
     states: { active: { filter: { type: "none" } }, hover: { filter: { type: "none" } } },
@@ -1544,8 +1474,8 @@ function WidgetSlot({
     tooltip: { enabled: true, y: { formatter: formatChartTooltipValue } },
     xaxis: {
       categories: currentStackCategories.map((category) => category.label),
-      max: isStackColumn100 ? undefined : widget?.type === "stack-100-bar" ? 100 : effectiveBarMax,
-      min: isStackColumn100 ? undefined : 0,
+      max: isStackColumn ? undefined : widget?.type === "stack-100-bar" ? 100 : effectiveBarMax,
+      min: isStackColumn ? undefined : 0,
       labels: {
         formatter: widget?.type === "stack-100-bar" ? (value) => `${Math.round(Number(value))}%` : undefined,
         style: { fontSize: `${chartFontSize}px` },
@@ -1553,7 +1483,9 @@ function WidgetSlot({
     },
     yaxis: isStackColumn100
       ? { max: 100, min: 0, labels: { formatter: (value) => `${Math.round(Number(value))}%`, style: { fontSize: `${chartFontSize}px`, fontWeight: 700 } } }
-      : { labels: { maxWidth: 90, style: { fontSize: `${chartFontSize}px`, fontWeight: 700 } } },
+      : isStackColumn
+        ? { max: effectiveBarMax, min: 0, labels: { formatter: (value) => Number(value).toLocaleString(), style: { fontSize: `${chartFontSize}px`, fontWeight: 700 } } }
+        : { labels: { maxWidth: 90, style: { fontSize: `${chartFontSize}px`, fontWeight: 700 } } },
   };
   const lineChartOptions: ApexOptions = {
     annotations: {
@@ -1727,7 +1659,7 @@ function WidgetSlot({
                     ))}
                   </div>
                   <div
-                    className="relative z-10 flex h-full min-w-[2px] items-center justify-end rounded-[inherit] px-1.5 text-right font-extrabold text-white transition-[width] duration-700 ease-out"
+                    className="relative z-10 flex h-full min-w-[2px] items-center justify-center rounded-[inherit] px-1.5 text-center font-extrabold text-white transition-[width] duration-700 ease-out"
                     style={{ backgroundColor: chartColors[index % chartColors.length], borderRadius: `${chartBarBorderRadius}px`, fontSize: `${chartFontSize}px`, width: `${widthPercent}%` }}
                   >
                     {widthPercent >= 18 ? displayValue : null}
@@ -1748,6 +1680,36 @@ function WidgetSlot({
             {axisSteps.map((step) => <span key={step}>{barPercentageMode ? `${step}%` : Math.round((effectiveBarMax * step) / 100).toLocaleString()}</span>)}
           </div>
         </div>
+      </div>
+    );
+  }
+
+  function renderBarMarkerLabels() {
+    if (!isBarMarkers || !(widget?.barMarkerShowLabel ?? true)) return null;
+    const markerColor = widget?.barMarkerColor ?? "#e42f44";
+    const labelText = widget?.barMarkerLabelText || "Target";
+    return (
+      <div className="pointer-events-none absolute bottom-0 right-2 top-0 z-30 overflow-visible" style={{ left: "clamp(52px, 22%, 96px)" }} aria-hidden="true">
+        {currentBarItems.map((item, index) => {
+          const target = Math.max(0, Number(barMarkerValues[index] ?? 0));
+          const targetPercent = Math.max(0, Math.min(100, (target / effectiveBarMax) * 100));
+          const rowPercent = ((index + 0.5) / Math.max(1, currentBarItems.length)) * 100;
+          return (
+            <span
+              key={`${item.id}-target-label`}
+              className="absolute whitespace-nowrap rounded px-1 py-px font-extrabold leading-tight text-white shadow-sm"
+              style={{
+                backgroundColor: markerColor,
+                fontSize: `${widget?.barMarkerLabelFontSize ?? 9}px`,
+                left: `${targetPercent}%`,
+                top: `${rowPercent}%`,
+                transform: "translate(-50%, -145%)",
+              }}
+            >
+              {labelText}
+            </span>
+          );
+        })}
       </div>
     );
   }
@@ -2028,7 +1990,11 @@ function WidgetSlot({
             ? values.map((value) => value === null ? null : Math.abs(value))
             : isLineChart
               ? values
-              : values.map((value) => Math.max(0, value ?? 0));
+              : values.map((value) => {
+                const positiveValue = Math.max(0, value ?? 0);
+                const rounding = widgetType === "stack-column" ? (widget?.stackValueRounding ?? 10000) : 0;
+                return rounding > 0 ? Math.round(positiveValue / rounding) * rounding : positiveValue;
+              });
           setStackValues(series.map((_, index) => chartValues.slice(index * currentStackCategories.length, (index + 1) * currentStackCategories.length)));
           setBarStatus(`${series.length} series loaded`);
         })
@@ -2048,7 +2014,7 @@ function WidgetSlot({
       window.clearTimeout(loadTimer);
       window.removeEventListener("excel-upload-replaced", handleUploadReplaced);
     };
-  }, [isColumnChart, isLineChart, isRadarChart, isStackBar, widget?.lineNullMissing, widget?.sheetName, widget?.sourceUploadId, widget?.stackCategories, widget?.stackSeries]);
+  }, [isColumnChart, isLineChart, isRadarChart, isStackBar, widget?.lineNullMissing, widget?.sheetName, widget?.sourceUploadId, widget?.stackCategories, widget?.stackSeries, widget?.stackValueRounding]);
 
   useEffect(() => {
     if (!widget) return;
@@ -2952,6 +2918,7 @@ function WidgetSlot({
                 <div className="grid h-full place-items-center px-2 text-center text-[10px] font-bold text-slate-400">{barStatus}</div>
               )}
                 </div>
+                {barValues.length > 0 && barMarkerValues.length === barValues.length ? renderBarMarkerLabels() : null}
               </div>
             </div>
           ) : isStackBar ? (
@@ -3663,7 +3630,7 @@ function WidgetSlot({
                   onPointerDown={startToolbarDrag}
                 >
                   <GripVertical className="h-4 w-4 text-slate-400" />
-                  {isAnnotatedLine ? "Line with Annotations" : isLineChart ? "Basic Line Chart" : isColumnChart ? "Column with Rotated Labels" : isRadarChart ? "Radar with Polygon Fill" : isStackColumn100 ? "Stacked Column 100%" : widget.type === "stack-100-bar" ? "Stack 100% Bar" : "Stack Bar"} tools
+                  {isAnnotatedLine ? "Line with Annotations" : isLineChart ? "Basic Line Chart" : isColumnChart ? "Column with Rotated Labels" : isRadarChart ? "Radar with Polygon Fill" : isStackColumn100 ? "Stacked Column 100%" : widget.type === "stack-column" ? "Stack Column" : widget.type === "stack-100-bar" ? "Stack 100% Bar" : "Stack Bar"} tools
                 </button>
                 {renderWidgetToolbarActions()}
 
@@ -3696,7 +3663,7 @@ function WidgetSlot({
                   </label>
                 </div>
 
-                {widget.type === "stack-bar" || isLineChart || isColumnChart || isRadarChart ? (
+                {widget.type === "stack-bar" || widget.type === "stack-column" || isLineChart || isColumnChart || isRadarChart ? (
                   <label className="block text-[10px] font-black uppercase text-slate-500">
                     Maximum value
                     <input
@@ -3711,6 +3678,26 @@ function WidgetSlot({
                 ) : (
                   <p className="rounded bg-blue-50 px-3 py-2 text-[10px] font-bold text-cj-blue">Scale is normalized automatically from 0% to 100%.</p>
                 )}
+
+                {widget.type === "stack-column" ? (
+                  <label className="block rounded border border-slate-200 bg-slate-50 p-2 text-[10px] font-black uppercase text-slate-500">
+                    Round Cell values
+                    <select
+                      className="mt-1 h-9 w-full rounded border border-slate-200 bg-white px-2 text-xs font-bold normal-case text-cj-navy outline-none focus:border-cj-blue"
+                      value={widget.stackValueRounding ?? 10000}
+                      onChange={(event) => onUpdateWidget(boxId, widget.id, { stackValueRounding: Number(event.target.value) })}
+                    >
+                      <option value={0}>No rounding</option>
+                      <option value={1}>Integer</option>
+                      <option value={10}>Nearest 10</option>
+                      <option value={100}>Nearest 100</option>
+                      <option value={1000}>Nearest 1,000</option>
+                      <option value={10000}>Nearest 10,000</option>
+                      <option value={100000}>Nearest 100,000</option>
+                    </select>
+                    <span className="mt-1 block text-[9px] font-bold normal-case text-slate-400">Example: 9,849.3 becomes 10,000.</span>
+                  </label>
+                ) : null}
 
                 {isLineChart ? (
                   <div className="grid grid-cols-3 gap-2 rounded border border-slate-200 bg-slate-50 p-2">
@@ -3861,7 +3848,7 @@ function WidgetSlot({
 
                 <div>
                   <div className="flex items-center justify-between">
-                    <div><h3 className="text-xs font-black text-cj-navy">{isLineChart || isColumnChart || isRadarChart || isStackColumn100 ? "Categories" : "Bars"}</h3><p className="text-[10px] font-bold text-slate-400">Labels on the chart axis.</p></div>
+                    <div><h3 className="text-xs font-black text-cj-navy">{isLineChart || isColumnChart || isRadarChart || isStackColumn ? "Categories" : "Bars"}</h3><p className="text-[10px] font-bold text-slate-400">Labels on the chart axis.</p></div>
                     <button className="grid h-8 w-8 place-items-center rounded-md bg-cj-navy text-white hover:bg-cj-blue" title="Add category" type="button" onClick={addStackCategory}><Plus className="h-4 w-4" /></button>
                   </div>
                   <div className="mt-2 space-y-1.5">
@@ -5149,8 +5136,8 @@ export function BoxWorkspaceEditor({
                   { id: makeId("pie-slice"), label: "Pending", cell: "D7" },
                 ]
               : undefined,
-          barMax: dragData.template.type === "bar" || dragData.template.type === "bar-markers" || dragData.template.type === "stack-bar" || dragData.template.type === "column-rotated-labels" || dragData.template.type === "basic-line" || dragData.template.type === "line-annotations" || dragData.template.type === "radar-polygon" ? 100 : undefined,
-          barMaxInput: dragData.template.type === "bar" || dragData.template.type === "bar-markers" || dragData.template.type === "stack-bar" || dragData.template.type === "column-rotated-labels" || dragData.template.type === "basic-line" || dragData.template.type === "line-annotations" || dragData.template.type === "radar-polygon" ? "100" : undefined,
+          barMax: dragData.template.type === "bar" || dragData.template.type === "bar-markers" || dragData.template.type === "stack-bar" || dragData.template.type === "stack-column" || dragData.template.type === "column-rotated-labels" || dragData.template.type === "basic-line" || dragData.template.type === "line-annotations" || dragData.template.type === "radar-polygon" ? (dragData.template.type === "stack-column" ? 10000 : 100) : undefined,
+          barMaxInput: dragData.template.type === "bar" || dragData.template.type === "bar-markers" || dragData.template.type === "stack-bar" || dragData.template.type === "stack-column" || dragData.template.type === "column-rotated-labels" || dragData.template.type === "basic-line" || dragData.template.type === "line-annotations" || dragData.template.type === "radar-polygon" ? (dragData.template.type === "stack-column" ? "10000" : "100") : undefined,
           barDisplayPercentage: dragData.template.type === "bar" ? false : undefined,
           barMarkerColor: dragData.template.type === "bar-markers" ? "#e42f44" : undefined,
           barMarkerHeight: dragData.template.type === "bar-markers" ? 5 : undefined,
@@ -5170,15 +5157,16 @@ export function BoxWorkspaceEditor({
           barMarkerZoneMidColor: dragData.template.type === "bar-markers" ? "#fef3c7" : undefined,
           barMarkerZoneHighColor: dragData.template.type === "bar-markers" ? "#dcfce7" : undefined,
           barMarkerZoneOpacity: dragData.template.type === "bar-markers" ? 32 : undefined,
-          barBorderRadius: dragData.template.type === "bar" || dragData.template.type === "bar-markers" || dragData.template.type === "stack-bar" || dragData.template.type === "stack-100-bar" || dragData.template.type === "stack-100-column" || dragData.template.type === "column-rotated-labels" ? 6 : undefined,
+          barBorderRadius: dragData.template.type === "bar" || dragData.template.type === "bar-markers" || dragData.template.type === "stack-bar" || dragData.template.type === "stack-column" || dragData.template.type === "stack-100-bar" || dragData.template.type === "stack-100-column" || dragData.template.type === "column-rotated-labels" ? 6 : undefined,
+          stackValueRounding: dragData.template.type === "stack-column" ? 10000 : undefined,
           radarStrokeWidth: dragData.template.type === "radar-polygon" ? 2 : undefined,
           radarFillOpacity: dragData.template.type === "radar-polygon" ? 0.2 : undefined,
           radarMarkerSize: dragData.template.type === "radar-polygon" ? 4 : undefined,
           radarPolygonColor1: dragData.template.type === "radar-polygon" ? "#f8fafc" : undefined,
           radarPolygonColor2: dragData.template.type === "radar-polygon" ? "#eef2f6" : undefined,
           radarPolygonStrokeColor: dragData.template.type === "radar-polygon" ? "#cbd5e1" : undefined,
-          stackCategories: dragData.template.type === "stack-bar" || dragData.template.type === "stack-100-bar" || dragData.template.type === "stack-100-column" || dragData.template.type === "column-rotated-labels" || dragData.template.type === "basic-line" || dragData.template.type === "line-annotations" || dragData.template.type === "radar-polygon"
-            ? dragData.template.type === "basic-line" || dragData.template.type === "line-annotations" || dragData.template.type === "column-rotated-labels" || dragData.template.type === "stack-100-column" || dragData.template.type === "radar-polygon"
+          stackCategories: dragData.template.type === "stack-bar" || dragData.template.type === "stack-column" || dragData.template.type === "stack-100-bar" || dragData.template.type === "stack-100-column" || dragData.template.type === "column-rotated-labels" || dragData.template.type === "basic-line" || dragData.template.type === "line-annotations" || dragData.template.type === "radar-polygon"
+            ? dragData.template.type === "basic-line" || dragData.template.type === "line-annotations" || dragData.template.type === "column-rotated-labels" || dragData.template.type === "stack-column" || dragData.template.type === "stack-100-column" || dragData.template.type === "radar-polygon"
               ? [
                   { id: makeId("chart-category"), label: "Week 1" },
                   { id: makeId("chart-category"), label: "Week 2" },
@@ -5186,8 +5174,8 @@ export function BoxWorkspaceEditor({
                 ]
               : [{ id: makeId("stack-category"), label: "Bar 1" }]
             : undefined,
-          stackSeries: dragData.template.type === "stack-bar" || dragData.template.type === "stack-100-bar" || dragData.template.type === "stack-100-column" || dragData.template.type === "column-rotated-labels" || dragData.template.type === "basic-line" || dragData.template.type === "line-annotations" || dragData.template.type === "radar-polygon"
-            ? dragData.template.type === "basic-line" || dragData.template.type === "line-annotations" || dragData.template.type === "column-rotated-labels" || dragData.template.type === "stack-100-column" || dragData.template.type === "radar-polygon"
+          stackSeries: dragData.template.type === "stack-bar" || dragData.template.type === "stack-column" || dragData.template.type === "stack-100-bar" || dragData.template.type === "stack-100-column" || dragData.template.type === "column-rotated-labels" || dragData.template.type === "basic-line" || dragData.template.type === "line-annotations" || dragData.template.type === "radar-polygon"
+            ? dragData.template.type === "basic-line" || dragData.template.type === "line-annotations" || dragData.template.type === "column-rotated-labels" || dragData.template.type === "stack-column" || dragData.template.type === "stack-100-column" || dragData.template.type === "radar-polygon"
               ? [
                   { id: makeId("chart-series"), label: "Complete", cells: ["C7", "C8", "C9"] },
                   { id: makeId("chart-series"), label: "Pending", cells: ["D7", "D8", "D9"] },
@@ -5570,7 +5558,7 @@ export function BoxWorkspaceEditor({
               <div className="min-w-0 border-l border-slate-200 pl-3">
                 <h3 className="text-[10px] font-black uppercase text-slate-400">Visualization</h3>
                 <div className="mt-1 grid grid-cols-2 gap-1.5">
-                  {widgetTemplates.filter((template) => template.type === "chart" || template.type === "bar" || template.type === "bar-markers" || template.type === "stack-bar" || template.type === "stack-100-bar" || template.type === "stack-100-column" || template.type === "column-rotated-labels" || template.type === "basic-line" || template.type === "line-annotations" || template.type === "radar-polygon" || template.type === "simple-pie" || template.type === "simple-donut").map((template) => (
+                  {widgetTemplates.filter((template) => template.type === "chart" || template.type === "bar" || template.type === "bar-markers" || template.type === "stack-bar" || template.type === "stack-column" || template.type === "stack-100-bar" || template.type === "stack-100-column" || template.type === "column-rotated-labels" || template.type === "basic-line" || template.type === "line-annotations" || template.type === "radar-polygon" || template.type === "simple-pie" || template.type === "simple-donut").map((template) => (
                     <DraggableWidgetTemplate key={template.type} template={template} />
                   ))}
                 </div>
@@ -5652,7 +5640,7 @@ export function BoxWorkspaceEditor({
         </PageCopyPanel>
       ) : null}
 
-      <footer className="pointer-events-none relative z-10 -mt-16 px-4 pb-4 text-center text-[10px] font-medium text-slate-400">
+      <footer className="pointer-events-none relative z-10 -mt-16 translate-y-[3px] px-4 pb-4 text-center text-[10px] font-medium text-slate-400">
         © 2026 copyright reserved , CJ Logistics , IT Auttha.
       </footer>
 

@@ -249,6 +249,7 @@ class WorkspaceWidget(BaseModel):
     columnLabelRotation: int = -45
     columnWidth: int = 55
     columnBorderRadius: int = 6
+    stackValueRounding: int = 10000
     columnShowDataLabels: bool = True
     columnShowDataLabelBackground: bool = True
 
