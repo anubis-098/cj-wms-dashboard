@@ -250,6 +250,7 @@ class WorkspaceWidget(BaseModel):
     columnWidth: int = 55
     columnBorderRadius: int = 6
     stackValueRounding: int = 10000
+    stackColumnPercentage: bool = False
     columnShowDataLabels: bool = True
     columnShowDataLabelBackground: bool = True
 

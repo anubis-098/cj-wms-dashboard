@@ -1283,6 +1283,7 @@ function WidgetSlot({
   };
   const isStackColumn100 = widget?.type === "stack-100-column";
   const isStackColumn = widget?.type === "stack-column" || isStackColumn100;
+  const isStackColumnPercentage = isStackColumn100 || (widget?.type === "stack-column" && (widget.stackColumnPercentage ?? false));
   const isStackBar = widget?.type === "stack-bar" || widget?.type === "stack-column" || widget?.type === "stack-100-bar" || isStackColumn100;
   const isLineChart = widget?.type === "basic-line" || widget?.type === "line-annotations";
   const isAnnotatedLine = widget?.type === "line-annotations";
@@ -1432,14 +1433,14 @@ function WidgetSlot({
       },
       parentHeightOffset: 0,
       stacked: true,
-      stackType: widget?.type === "stack-100-bar" || isStackColumn100 ? "100%" : "normal",
+      stackType: widget?.type === "stack-100-bar" || isStackColumnPercentage ? "100%" : "normal",
       toolbar: { show: false },
     },
     colors: chartColors,
     dataLabels: {
       enabled: true,
       background: { enabled: false },
-      ...(isStackColumn100 ? { formatter: (value: number) => `${Math.round(Number(value))}%` } : {}),
+      ...(isStackColumnPercentage ? { formatter: (value: number) => `${Math.round(Number(value))}%` } : {}),
       style: { fontSize: `${chartFontSize}px`, fontWeight: 800 },
     },
     grid: {
@@ -1481,8 +1482,8 @@ function WidgetSlot({
         style: { fontSize: `${chartFontSize}px` },
       },
     },
-    yaxis: isStackColumn100
-      ? { max: 100, min: 0, labels: { formatter: (value) => `${Math.round(Number(value))}%`, style: { fontSize: `${chartFontSize}px`, fontWeight: 700 } } }
+    yaxis: isStackColumnPercentage
+      ? { max: 100, min: 0, labels: { formatter: (value) => isStackColumn100 ? `${Math.round(Number(value))}%` : `${Math.round(Number(value))}`, style: { fontSize: `${chartFontSize}px`, fontWeight: 700 } } }
       : isStackColumn
         ? { max: effectiveBarMax, min: 0, labels: { formatter: (value) => Number(value).toLocaleString(), style: { fontSize: `${chartFontSize}px`, fontWeight: 700 } } }
         : { labels: { maxWidth: 90, style: { fontSize: `${chartFontSize}px`, fontWeight: 700 } } },
@@ -1986,15 +1987,21 @@ function WidgetSlot({
       fetchNumericInputLookup(uploadId, sheetName, cells)
         .then((cellLookup) => Promise.all(cells.map((cell) => resolveNullableNumericInput(uploadId, sheetName, cell, widgetType === "basic-line" && (widget?.lineNullMissing ?? false), cellLookup))))
         .then((values) => {
-          const chartValues = widgetType === "basic-line"
+          const rawChartValues = widgetType === "basic-line"
             ? values.map((value) => value === null ? null : Math.abs(value))
             : isLineChart
               ? values
               : values.map((value) => {
                 const positiveValue = Math.max(0, value ?? 0);
-                const rounding = widgetType === "stack-column" ? (widget?.stackValueRounding ?? 10000) : 0;
-                return rounding > 0 ? Math.round(positiveValue / rounding) * rounding : positiveValue;
+                return widgetType === "stack-column" ? Math.round(positiveValue) : positiveValue;
               });
+          const chartValues = widgetType === "stack-column" && (widget?.stackColumnPercentage ?? false)
+            ? rawChartValues.map((_, valueIndex) => {
+              const categoryIndex = valueIndex % currentStackCategories.length;
+              const total = rawChartValues.reduce<number>((sum, value, seriesValueIndex) => seriesValueIndex % currentStackCategories.length === categoryIndex ? sum + Number(value ?? 0) : sum, 0);
+              return total > 0 ? (Number(rawChartValues[valueIndex] ?? 0) / total) * 100 : 0;
+            })
+            : rawChartValues;
           setStackValues(series.map((_, index) => chartValues.slice(index * currentStackCategories.length, (index + 1) * currentStackCategories.length)));
           setBarStatus(`${series.length} series loaded`);
         })
@@ -2014,7 +2021,7 @@ function WidgetSlot({
       window.clearTimeout(loadTimer);
       window.removeEventListener("excel-upload-replaced", handleUploadReplaced);
     };
-  }, [isColumnChart, isLineChart, isRadarChart, isStackBar, widget?.lineNullMissing, widget?.sheetName, widget?.sourceUploadId, widget?.stackCategories, widget?.stackSeries, widget?.stackValueRounding]);
+  }, [isColumnChart, isLineChart, isRadarChart, isStackBar, widget?.lineNullMissing, widget?.sheetName, widget?.sourceUploadId, widget?.stackCategories, widget?.stackSeries, widget?.stackColumnPercentage]);
 
   useEffect(() => {
     if (!widget) return;
@@ -3680,22 +3687,17 @@ function WidgetSlot({
                 )}
 
                 {widget.type === "stack-column" ? (
-                  <label className="block rounded border border-slate-200 bg-slate-50 p-2 text-[10px] font-black uppercase text-slate-500">
-                    Round Cell values
-                    <select
-                      className="mt-1 h-9 w-full rounded border border-slate-200 bg-white px-2 text-xs font-bold normal-case text-cj-navy outline-none focus:border-cj-blue"
-                      value={widget.stackValueRounding ?? 10000}
-                      onChange={(event) => onUpdateWidget(boxId, widget.id, { stackValueRounding: Number(event.target.value) })}
-                    >
-                      <option value={0}>No rounding</option>
-                      <option value={1}>Integer</option>
-                      <option value={10}>Nearest 10</option>
-                      <option value={100}>Nearest 100</option>
-                      <option value={1000}>Nearest 1,000</option>
-                      <option value={10000}>Nearest 10,000</option>
-                      <option value={100000}>Nearest 100,000</option>
-                    </select>
-                    <span className="mt-1 block text-[9px] font-bold normal-case text-slate-400">Example: 9,849.3 becomes 10,000.</span>
+                  <label className="flex items-center justify-between rounded border border-slate-200 bg-slate-50 p-2 text-[10px] font-black uppercase text-slate-500">
+                    <span>
+                      Display as %
+                      <span className="mt-0.5 block text-[9px] font-bold normal-case text-slate-400">Cell values are rounded to integers automatically.</span>
+                    </span>
+                    <input
+                      className="h-4 w-4 accent-cj-blue"
+                      type="checkbox"
+                      checked={widget.stackColumnPercentage ?? false}
+                      onChange={(event) => onUpdateWidget(boxId, widget.id, { stackColumnPercentage: event.target.checked })}
+                    />
                   </label>
                 ) : null}
 
@@ -5159,6 +5161,7 @@ export function BoxWorkspaceEditor({
           barMarkerZoneOpacity: dragData.template.type === "bar-markers" ? 32 : undefined,
           barBorderRadius: dragData.template.type === "bar" || dragData.template.type === "bar-markers" || dragData.template.type === "stack-bar" || dragData.template.type === "stack-column" || dragData.template.type === "stack-100-bar" || dragData.template.type === "stack-100-column" || dragData.template.type === "column-rotated-labels" ? 6 : undefined,
           stackValueRounding: dragData.template.type === "stack-column" ? 10000 : undefined,
+          stackColumnPercentage: dragData.template.type === "stack-column" ? false : undefined,
           radarStrokeWidth: dragData.template.type === "radar-polygon" ? 2 : undefined,
           radarFillOpacity: dragData.template.type === "radar-polygon" ? 0.2 : undefined,
           radarMarkerSize: dragData.template.type === "radar-polygon" ? 4 : undefined,

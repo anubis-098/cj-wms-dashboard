@@ -217,7 +217,7 @@ export function TvDashboardPage() {
   return (
     <main className={`tv-dashboard h-screen bg-screen-bg ${isEditMode ? "overflow-y-auto" : "overflow-hidden"} ${theme === "dark" ? "theme-dark" : "theme-light"}`} aria-label="Workspace">
       <header className="cj-brand-header sticky top-0 z-50 flex h-20 shrink-0 items-center border-b border-slate-200 bg-white px-8 shadow-sm">
-        <div className="text-sm font-black tracking-wide text-cj-navy">CJ WMS</div>
+        <div className="text-lg font-black tracking-wide text-cj-navy">CJ Logistics Dashboard</div>
         <div className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 items-center gap-4">
           <div
             className="flex h-14 items-center font-black tabular-nums leading-none text-cj-navy"

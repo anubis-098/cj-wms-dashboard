@@ -125,6 +125,7 @@ export type WorkspaceWidget = {
     cells: string[];
   }>;
   stackValueRounding?: number;
+  stackColumnPercentage?: boolean;
   chartShowLegend?: boolean;
   chartLegendPosition?: "top" | "bottom";
   chartColors?: string[];
