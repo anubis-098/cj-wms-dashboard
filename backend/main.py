@@ -45,6 +45,7 @@ FILE_SERVER_MAX_FILE_BYTES = int(os.getenv("FILE_SERVER_MAX_FILE_MB", "25")) * 1
 FILE_SERVER_MIRROR_URL = os.getenv("FILE_SERVER_MIRROR_URL", "").strip()
 FILE_SERVER_MIRROR_TOKEN = os.getenv("FILE_SERVER_MIRROR_TOKEN", "")
 APP_TIMEZONE = os.getenv("APP_TIMEZONE", "Asia/Bangkok")
+EDIT_MODE_PIN = os.getenv("EDIT_MODE_PIN", "4444")
 excel_sheet_cache: OrderedDict[tuple[str, str], tuple[float, str, list[list[Any]], list[list[str]]]] = OrderedDict()
 excel_cache_lock = Lock()
 excel_sheet_locks: dict[tuple[str, str], Lock] = {}
@@ -90,6 +91,10 @@ app.add_middleware(
 class LoginRequest(BaseModel):
     username: str
     password: str
+
+
+class EditPinRequest(BaseModel):
+    pin: str
 
 
 class DashboardSettings(BaseModel):
@@ -305,6 +310,20 @@ class ExcelUpload(Base):
     uploaded_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
 
 
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    event_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    widget_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    widget_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    actor: Mapped[str] = mapped_column(String(100), nullable=False, default="unknown", server_default="unknown")
+    ip_address: Mapped[str | None] = mapped_column(String(45), nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    details: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=lambda: datetime.now(ZoneInfo(APP_TIMEZONE)).replace(tzinfo=None), server_default=func.now())
+
+
 cached_dashboard: dict[str, Any] = {
     "status": "waiting",
     "data": generate_mock_dashboard(),
@@ -446,7 +465,46 @@ def require_database_error(exc: SQLAlchemyError) -> HTTPException:
 
 
 def now_string() -> str:
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    return datetime.now(ZoneInfo(APP_TIMEZONE)).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def record_audit_event(
+    event_type: str,
+    *,
+    request: Request | None = None,
+    widget_id: str | None = None,
+    widget_type: str | None = None,
+    actor: str = "system",
+    details: dict[str, Any] | None = None,
+) -> None:
+    """Write a compact audit event without making the user action fail if logging is unavailable."""
+    try:
+        with SessionLocal() as session:
+            session.add(AuditLog(
+                event_type=event_type,
+                widget_id=widget_id,
+                widget_type=widget_type,
+                actor=actor,
+                ip_address=request.client.host if request and request.client else None,
+                user_agent=request.headers.get("user-agent")[:500] if request and request.headers.get("user-agent") else None,
+                details=details,
+                created_at=datetime.now(ZoneInfo(APP_TIMEZONE)).replace(tzinfo=None),
+            ))
+            session.commit()
+    except SQLAlchemyError:
+        # Auditing must not take down the dashboard when the database is degraded.
+        return
+
+
+def workspace_widget_index(layout: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    pages = layout.get("pages") or [{"boxes": layout.get("boxes", [])}]
+    return {
+        widget.get("id", ""): widget
+        for page in pages
+        for box in page.get("boxes", [])
+        for widget in box.get("widgets", [])
+        if widget.get("id")
+    }
 
 
 def load_widget_layout() -> dict[str, Any]:
@@ -755,6 +813,18 @@ def sync_latest_file_server_excel() -> dict[str, Any]:
             "upload_id": upload_id,
             "message": "Latest workbook synchronized",
         })
+        record_audit_event(
+            "FILE_SYNC_UPDATED",
+            actor="file-server-sync",
+            details={
+                "filename": original_filename,
+                "upload_id": upload_id,
+                "source_path": str(source_path),
+                "source_mtime_ns": source_stat.st_mtime_ns,
+                "source_size": source_stat.st_size,
+                "sheet": latest_sheet,
+            },
+        )
         return {
             "changed": True,
             "upload_id": upload_id,
@@ -1123,6 +1193,16 @@ def login(payload: LoginRequest) -> dict[str, str]:
     }
 
 
+@app.post("/auth/edit-pin")
+def verify_edit_pin(payload: EditPinRequest, request: Request) -> dict[str, str]:
+    if payload.pin == EDIT_MODE_PIN:
+        record_audit_event("PIN_LOGIN_SUCCESS", request=request, actor="edit-mode")
+        return {"status": "success"}
+
+    record_audit_event("PIN_LOGIN_FAILED", request=request, actor="edit-mode")
+    raise HTTPException(status_code=401, detail="Incorrect PIN")
+
+
 @app.get("/settings/dashboard")
 def get_settings() -> dict[str, Any]:
     return {"status": "success", "data": load_dashboard_settings().model_dump()}
@@ -1179,8 +1259,38 @@ async def workspace_events(request: Request) -> StreamingResponse:
 
 
 @app.put("/workspace/layout")
-async def update_workspace_layout(layout: WorkspaceLayout) -> dict[str, Any]:
+async def update_workspace_layout(layout: WorkspaceLayout, request: Request) -> dict[str, Any]:
+    previous_layout = load_workspace_layout()
+    previous_widgets = workspace_widget_index(previous_layout)
+    next_layout = layout.model_dump()
+    next_widgets = workspace_widget_index(next_layout)
+    deleted_widget_ids = sorted(set(previous_widgets) - set(next_widgets))
+    updated_widget_ids = sorted(
+        widget_id
+        for widget_id in set(previous_widgets).intersection(next_widgets)
+        if previous_widgets[widget_id] != next_widgets[widget_id]
+    )
     saved_layout = save_workspace_layout(layout)
+    record_audit_event(
+        "LAYOUT_SAVE",
+        request=request,
+        actor="edit-mode",
+        details={
+            "updated_widget_ids": updated_widget_ids,
+            "deleted_widget_ids": deleted_widget_ids,
+            "widget_count": len(next_widgets),
+        },
+    )
+    for widget_id in deleted_widget_ids:
+        deleted_widget = previous_widgets[widget_id]
+        record_audit_event(
+            "WIDGET_DELETE",
+            request=request,
+            widget_id=widget_id,
+            widget_type=deleted_widget.get("type"),
+            actor="edit-mode",
+            details={"label": deleted_widget.get("label")},
+        )
     broadcast_workspace_event("workspace-layout-saved", datetime.now().isoformat())
     return {"status": "success", "data": saved_layout}
 

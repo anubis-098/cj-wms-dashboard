@@ -1,8 +1,8 @@
-import { FileSpreadsheet, LoaderCircle, Moon, Pencil, Plus, RefreshCw, Save, Settings, Sun, Trash2, X } from "lucide-react";
+import { FileSpreadsheet, KeyRound, LoaderCircle, Moon, Pencil, Plus, RefreshCw, Save, Settings, Sun, Trash2, X } from "lucide-react";
 import { ChangeEvent, useEffect, useRef, useState } from "react";
 
 import { BoxWorkspaceEditor } from "../components/workspace/BoxWorkspaceEditor";
-import { deleteExcelUpload, fetchExcelSheets, fetchExcelUploads, fetchFileServerSyncStatus, fetchWorkspaceLayout, replaceExcelUpload, switchWorkspaceUploadSheet, syncFileServerNow, uploadExcel } from "../services/api";
+import { deleteExcelUpload, fetchExcelSheets, fetchExcelUploads, fetchFileServerSyncStatus, fetchWorkspaceLayout, replaceExcelUpload, switchWorkspaceUploadSheet, syncFileServerNow, uploadExcel, verifyEditPin } from "../services/api";
 import type { ExcelUploadRecord, FileServerSyncStatus } from "../services/api";
 
 function formatDateTime(date: Date) {
@@ -24,6 +24,11 @@ export function TvDashboardPage() {
   const [isEditMode, setIsEditMode] = useState(false);
   const [isCancellingEdit, setIsCancellingEdit] = useState(false);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [isPinPromptOpen, setIsPinPromptOpen] = useState(false);
+  const [editPin, setEditPin] = useState("");
+  const [pinError, setPinError] = useState("");
+  const [isVerifyingPin, setIsVerifyingPin] = useState(false);
+  const pinInputRef = useRef<HTMLInputElement>(null);
   const [cancelRequestId, setCancelRequestId] = useState(0);
   const [saveRequestId, setSaveRequestId] = useState(0);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -46,6 +51,34 @@ export function TvDashboardPage() {
     const timer = window.setInterval(() => setNow(new Date()), 1000);
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (!isPinPromptOpen) return;
+    const timer = window.setTimeout(() => pinInputRef.current?.focus(), 0);
+    return () => window.clearTimeout(timer);
+  }, [isPinPromptOpen]);
+
+  function closePinPrompt() {
+    setIsPinPromptOpen(false);
+    setEditPin("");
+    setPinError("");
+  }
+
+  async function submitEditPin() {
+    if (editPin.length !== 4 || isVerifyingPin) return;
+    setIsVerifyingPin(true);
+    try {
+      await verifyEditPin(editPin);
+      closePinPrompt();
+      setIsEditMode(true);
+    } catch {
+      setPinError("Incorrect PIN");
+      setEditPin("");
+      window.setTimeout(() => pinInputRef.current?.focus(), 0);
+    } finally {
+      setIsVerifyingPin(false);
+    }
+  }
 
   useEffect(() => {
     function updateDisplayScale() {
@@ -422,13 +455,68 @@ export function TvDashboardPage() {
               className="grid h-9 w-9 place-items-center rounded-md border border-slate-200 bg-white text-slate-600 transition hover:border-cj-blue hover:text-cj-blue"
               title="Edit"
               type="button"
-              onClick={() => setIsEditMode(true)}
+              onClick={() => {
+                setPinError("");
+                setEditPin("");
+                setIsPinPromptOpen(true);
+              }}
             >
               <Pencil className="h-4 w-4" />
             </button>
           )}
         </div>
       </header>
+
+      {isPinPromptOpen ? (
+        <div className="fixed inset-0 z-[100] grid place-items-center bg-slate-950/35 px-4" role="dialog" aria-modal="true" aria-labelledby="edit-pin-title">
+          <form
+            className="relative w-full max-w-sm rounded-lg border border-slate-200 bg-white p-5 shadow-panel"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void submitEditPin();
+            }}
+          >
+            <button
+              aria-label="Close PIN dialog"
+              className="absolute right-3 top-3 grid h-7 w-7 place-items-center rounded-full bg-red-500 text-white transition hover:bg-red-600"
+              title="Close"
+              type="button"
+              onClick={closePinPrompt}
+            >
+              <X className="h-4 w-4" />
+            </button>
+            <div className="flex items-center gap-3 pr-8">
+              <span className="grid h-10 w-10 place-items-center rounded-md bg-blue-50 text-cj-blue"><KeyRound className="h-5 w-5" /></span>
+              <div>
+                <h2 id="edit-pin-title" className="text-base font-black text-cj-navy">Enter Edit PIN</h2>
+                <p className="text-[10px] font-bold text-slate-400">Enter the 4-digit PIN to customize the workspace.</p>
+              </div>
+            </div>
+            <label className="mt-5 block text-[10px] font-black uppercase tracking-wide text-slate-500">
+              PIN
+              <input
+                ref={pinInputRef}
+                aria-label="Edit mode PIN"
+                className="mt-1 h-11 w-full rounded-md border border-slate-200 bg-white px-3 text-center text-xl font-black tracking-[0.5em] text-cj-navy outline-none focus:border-cj-blue focus:ring-2 focus:ring-blue-100"
+                inputMode="numeric"
+                maxLength={4}
+                pattern="[0-9]{4}"
+                type="password"
+                value={editPin}
+                onChange={(event) => {
+                  setPinError("");
+                  setEditPin(event.target.value.replace(/\D/g, "").slice(0, 4));
+                }}
+              />
+            </label>
+            {pinError ? <p className="mt-2 text-center text-xs font-bold text-red-600">{pinError}</p> : null}
+            <button className="mt-4 h-10 w-full rounded-md bg-cj-blue text-sm font-black text-white transition hover:bg-cj-navy disabled:cursor-wait disabled:opacity-60" disabled={isVerifyingPin || editPin.length !== 4} type="submit">{isVerifyingPin ? "Checking..." : "Unlock Edit Mode"}</button>
+            <p className="mt-4 border-t border-slate-100 pt-3 text-[10px] font-bold leading-relaxed text-slate-400">
+              To change this PIN, edit <code className="rounded bg-slate-100 px-1 text-cj-navy">EDIT_MODE_PIN</code> in the server <code className="rounded bg-slate-100 px-1 text-cj-navy">.env</code>, then restart the backend.
+            </p>
+          </form>
+        </div>
+      ) : null}
 
       <BoxWorkspaceEditor
         cancelRequestId={cancelRequestId}
