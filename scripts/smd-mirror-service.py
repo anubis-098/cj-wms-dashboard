@@ -9,7 +9,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 
-def mirror_latest(source: Path, destination: Path) -> dict[str, object]:
+def mirror_latest(source: Path, destination: Path, force: bool = False) -> dict[str, object]:
     candidates = [
         path for path in source.iterdir()
         if path.is_file() and path.suffix.lower() == ".xlsx" and not path.name.startswith("~$")
@@ -20,7 +20,7 @@ def mirror_latest(source: Path, destination: Path) -> dict[str, object]:
     source_stat = latest.stat()
     destination.mkdir(parents=True, exist_ok=True)
     target = destination / latest.name
-    if target.exists():
+    if not force and target.exists():
         target_stat = target.stat()
         if target_stat.st_size == source_stat.st_size and target_stat.st_mtime_ns == source_stat.st_mtime_ns:
             return {"changed": False, "filename": latest.name, "size": source_stat.st_size}
@@ -67,7 +67,8 @@ def main() -> None:
                 self.send_json(403, {"detail": "Forbidden"})
                 return
             try:
-                self.send_json(200, {"status": "success", "data": mirror_latest(source, destination)})
+                force = self.headers.get("X-Sync-Force", "false").lower() == "true"
+                self.send_json(200, {"status": "success", "data": mirror_latest(source, destination, force=force)})
             except Exception as exc:
                 self.send_json(500, {"detail": str(exc)})
 

@@ -709,7 +709,7 @@ def find_latest_file_server_excel() -> Path:
     return max(candidates, key=lambda path: (path.stat().st_mtime_ns, path.name.lower()))
 
 
-def sync_latest_file_server_excel() -> dict[str, Any]:
+def sync_latest_file_server_excel(force: bool = False) -> dict[str, Any]:
     if not FILE_SERVER_SYNC_ENABLED:
         raise RuntimeError("Automatic File Server sync is disabled")
     if not file_server_sync_lock.acquire(blocking=False):
@@ -730,7 +730,7 @@ def sync_latest_file_server_excel() -> dict[str, Any]:
         if upload_id:
             with SessionLocal() as session:
                 upload_exists = session.get(ExcelUpload, upload_id) is not None
-        if upload_id and upload_exists and all(previous_state.get(key) == value for key, value in signature.items()):
+        if not force and upload_id and upload_exists and all(previous_state.get(key) == value for key, value in signature.items()):
             file_data = source_path.read_bytes()
             default_sheet = select_default_workbook_sheet(file_data)
             updated_widgets = update_workspace_widgets_sheet(upload_id, default_sheet, rebind_orphaned=True)
@@ -823,6 +823,7 @@ def sync_latest_file_server_excel() -> dict[str, Any]:
                 "source_mtime_ns": source_stat.st_mtime_ns,
                 "source_size": source_stat.st_size,
                 "sheet": latest_sheet,
+                "forced": force,
             },
         )
         return {
@@ -839,13 +840,13 @@ def sync_latest_file_server_excel() -> dict[str, Any]:
         file_server_sync_lock.release()
 
 
-async def run_file_server_sync() -> dict[str, Any]:
+async def run_file_server_sync(force: bool = False) -> dict[str, Any]:
     if FILE_SERVER_MIRROR_URL:
         def request_mirror() -> None:
             request = UrlRequest(
                 FILE_SERVER_MIRROR_URL,
                 data=b"",
-                headers={"X-Sync-Token": FILE_SERVER_MIRROR_TOKEN},
+                headers={"X-Sync-Token": FILE_SERVER_MIRROR_TOKEN, "X-Sync-Force": "true" if force else "false"},
                 method="POST",
             )
             with urlopen(request, timeout=300) as response:
@@ -853,7 +854,7 @@ async def run_file_server_sync() -> dict[str, Any]:
                     raise RuntimeError(f"File Server mirror returned HTTP {response.status}")
 
         await asyncio.to_thread(request_mirror)
-    result = await asyncio.to_thread(sync_latest_file_server_excel)
+    result = await asyncio.to_thread(sync_latest_file_server_excel, force=force)
     if result.get("updated_widgets"):
         broadcast_workspace_event("workspace-layout-saved", datetime.now().isoformat())
     if result["changed"]:
@@ -879,7 +880,7 @@ def get_file_server_sync_status() -> dict[str, Any]:
 @app.post("/file-server/sync")
 async def sync_file_server_now() -> dict[str, Any]:
     try:
-        result = await run_file_server_sync()
+        result = await run_file_server_sync(force=True)
     except (FileNotFoundError, RuntimeError, ValueError) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except SQLAlchemyError as exc:

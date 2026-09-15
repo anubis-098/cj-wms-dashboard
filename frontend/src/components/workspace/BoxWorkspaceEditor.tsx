@@ -4402,7 +4402,7 @@ function WorkspaceBoxCard({
         </button> : null}
       </div> : null}
       <div
-        className="absolute inset-2 grid gap-1"
+        className="absolute inset-1 grid gap-0.5"
         style={{
           gridTemplateColumns: `repeat(${slotColumns}, minmax(0, 1fr))`,
           gridTemplateRows: `repeat(${slotRows}, minmax(0, 1fr))`,
@@ -5531,7 +5531,7 @@ export function BoxWorkspaceEditor({
         ) : null}
       </div>
 
-      <section className={`flex min-h-[calc(100vh-5rem)] flex-col gap-4 p-4 ${editable && isToolTrayExpanded ? "pb-64" : "pb-12"}`}>
+      <section className={`flex min-h-[calc(100vh-6.5rem)] flex-col gap-2 p-2 ${editable ? isToolTrayExpanded ? "pb-64" : "pb-12" : "pb-0"}`}>
         {editable ? <div className="fixed bottom-4 left-4 right-4 z-40">
           <button
             aria-expanded={isToolTrayExpanded}
@@ -5604,9 +5604,9 @@ export function BoxWorkspaceEditor({
           </aside> : null}
         </div> : null}
 
-        <div className={`relative order-1 min-h-[calc(100vh-7rem)] rounded-lg border p-3 ${editable ? "border-slate-200 bg-slate-100/70 shadow-panel" : "border-transparent bg-transparent"}`}>
+        <div className={`relative order-1 min-h-[calc(100vh-7rem)] rounded-lg border ${editable ? "border-slate-200 bg-slate-100/70 shadow-panel" : "border-transparent bg-transparent"}`}>
           {editable ? <div
-            className="absolute inset-3 grid gap-2"
+            className="absolute inset-1 grid gap-1"
             style={{
               gridTemplateColumns: `repeat(${workspaceColumns}, minmax(0, 1fr))`,
               gridTemplateRows: `repeat(${workspaceRows}, minmax(72px, 1fr))`,
@@ -5618,7 +5618,7 @@ export function BoxWorkspaceEditor({
           </div> : null}
 
           <div
-            className="absolute inset-3 grid gap-2"
+            className="absolute inset-1 grid gap-1"
             style={{
               gridTemplateColumns: `repeat(${workspaceColumns}, minmax(0, 1fr))`,
               gridTemplateRows: `repeat(${workspaceRows}, minmax(72px, 1fr))`,
@@ -5668,7 +5668,7 @@ export function BoxWorkspaceEditor({
         </PageCopyPanel>
       ) : null}
 
-      <footer className="pointer-events-none relative z-10 -mt-16 translate-y-[7px] px-4 pb-4 text-center text-[10px] font-medium text-slate-400">
+      <footer className="pointer-events-none relative z-10 flex h-6 items-center justify-center px-2 text-center text-[10px] font-medium text-slate-400">
         © 2026 copyright reserved , CJ Logistics , IT Autthavut.
       </footer>
 

@@ -219,7 +219,7 @@ export function TvDashboardPage() {
 
   async function handleFileServerSync() {
     setIsSyncingFileServer(true);
-    setUploadStatus("Checking SMD File Server...");
+    setUploadStatus("Reloading latest Excel from SMD File Server...");
     try {
       const result = await syncFileServerNow();
       const uploads = await fetchExcelUploads();

@@ -103,3 +103,5 @@ FILE_SERVER_MAX_FILE_MB=25
 ```
 
 The Windows account running the Backend must have read permission on the UNC share. When the Backend runs in a Linux Docker container, mount the SMB share on the Docker host and set `FILE_SERVER_PATH` to that mounted container path, such as `/smd`. Do not put File Server credentials in Git.
+
+The **Sync latest Excel now** button forces a fresh copy and import even when the filename, size, and modification time are unchanged. It preserves the managed upload ID, clears the Excel cache, updates the last successful sync time, and refreshes connected widgets. Scheduled syncs still skip unchanged files. When using `scripts/smd-mirror-service.py`, update and restart that service together with the backend so manual sync also forces a fresh copy from the share.
